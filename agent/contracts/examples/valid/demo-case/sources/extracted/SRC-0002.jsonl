@@ -1,0 +1,13 @@
+{"n": 1, "locator": {"kind": "rows", "from": 1, "to": 1}, "text": "month | requests", "cells": ["month", "requests"]}
+{"n": 2, "locator": {"kind": "rows", "from": 2, "to": 2}, "text": "2025-01 | 100", "cells": ["2025-01", "100"]}
+{"n": 3, "locator": {"kind": "rows", "from": 3, "to": 3}, "text": "2025-02 | 110", "cells": ["2025-02", "110"]}
+{"n": 4, "locator": {"kind": "rows", "from": 4, "to": 4}, "text": "2025-03 | 115", "cells": ["2025-03", "115"]}
+{"n": 5, "locator": {"kind": "rows", "from": 5, "to": 5}, "text": "2025-04 | 120", "cells": ["2025-04", "120"]}
+{"n": 6, "locator": {"kind": "rows", "from": 6, "to": 6}, "text": "2025-05 | 125", "cells": ["2025-05", "125"]}
+{"n": 7, "locator": {"kind": "rows", "from": 7, "to": 7}, "text": "2025-06 | 130", "cells": ["2025-06", "130"]}
+{"n": 8, "locator": {"kind": "rows", "from": 8, "to": 8}, "text": "2025-07 | 130", "cells": ["2025-07", "130"]}
+{"n": 9, "locator": {"kind": "rows", "from": 9, "to": 9}, "text": "2025-08 | 125", "cells": ["2025-08", "125"]}
+{"n": 10, "locator": {"kind": "rows", "from": 10, "to": 10}, "text": "2025-09 | 120", "cells": ["2025-09", "120"]}
+{"n": 11, "locator": {"kind": "rows", "from": 11, "to": 11}, "text": "2025-10 | 115", "cells": ["2025-10", "115"]}
+{"n": 12, "locator": {"kind": "rows", "from": 12, "to": 12}, "text": "2025-11 | 110", "cells": ["2025-11", "110"]}
+{"n": 13, "locator": {"kind": "rows", "from": 13, "to": 13}, "text": "2025-12 | 140", "cells": ["2025-12", "140"]}

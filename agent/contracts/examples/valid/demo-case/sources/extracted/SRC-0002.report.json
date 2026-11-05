@@ -1,0 +1,30 @@
+{
+  "file": "monthly-requests.csv",
+  "type": "csv",
+  "bytes": 159,
+  "encoding": "utf-8",
+  "encoding_assumed": false,
+  "delimiter": ",",
+  "delimiter_assumed": false,
+  "rows": 13,
+  "uneven_rows": 0,
+  "empty_cells": 0,
+  "columns": [
+    {
+      "index": 1,
+      "name": "month",
+      "filled": 12,
+      "empty": 0,
+      "type": "text"
+    },
+    {
+      "index": 2,
+      "name": "requests",
+      "filled": 12,
+      "empty": 0,
+      "type": "number"
+    }
+  ],
+  "status": "ok",
+  "blocks": 13
+}

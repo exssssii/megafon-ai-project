@@ -22,6 +22,8 @@ from jsonschema.exceptions import ValidationError, best_match
 from jsonschema.validators import extend
 from referencing import Registry, Resource
 
+from evidence_blocks import load_blocks, matching_blocks, quote_in
+
 CONTRACTS = Path(__file__).resolve().parent.parent / "agent" / "contracts"
 SCHEMAS = CONTRACTS / "schemas"
 
@@ -32,11 +34,11 @@ ERROR_CODES = frozenset({
     "WITHDRAWN_USED", "DECISION_CHOICE_STATE", "DECISION_NOT_HUMAN", "DECISION_SUPERSEDE",
     "DECISION_MULTIPLE_ACTIVE", "ACTION_RETRY", "ACTION_ORDER", "ACTION_COST", "OUTPUT_LINK",
     "PATH_UNSAFE", "SCHEMA", "FORMAT_UNSUPPORTED", "FORMAT_MIXED", "CASE_INVALID",
-    "FILE_CORRUPT", "CHECKPOINT_NONE_VALID", "CHECKPOINT_CLAIM",
+    "FILE_CORRUPT", "CHECKPOINT_NONE_VALID", "CHECKPOINT_CLAIM", "LOCATOR_NOT_FOUND", "QUOTE_NOT_FOUND",
 })
 WARNING_CODES = frozenset({
     "BASIS_UNCONFIRMED", "SOURCE_PARTIAL", "ACTION_UNKNOWN", "JOURNAL_TORN",
-    "CHECKPOINT_STALE", "CHECKPOINT_FALLBACK",
+    "CHECKPOINT_STALE", "CHECKPOINT_FALLBACK", "EXTRACT_MISSING",
 })
 ALL_CODES = ERROR_CODES | WARNING_CODES
 
@@ -269,6 +271,7 @@ class Validator:
         self.unreadable: set[str] = set()       # prefixes whose file could not be read as a whole
         self.registries: dict[str, list[dict]] = {p: [] for _, p in REGISTRIES.values()}
         self.journal: list[dict] = []
+        self.extractions: dict[str, list[dict] | None] = {}   # SRC ID -> blocks, None when unusable
         self.case_id = root.name
         self.case_document = None
 
@@ -545,9 +548,44 @@ class Validator:
         except (ValueError, OSError):
             return False
 
+    def extraction_blocks(self, source) -> list[dict] | None:
+        """Blocks of a source, read once; None when the file is absent or corrupt (already reported)."""
+        source_id = source["id"]
+        if source_id not in self.extractions:
+            self.extractions[source_id] = self.load_extraction(source)
+        return self.extractions[source_id]
+
+    def load_extraction(self, source) -> list[dict] | None:
+        rel = f"sources/extracted/{source['id']}.jsonl"
+        target = self.root / rel
+        try:
+            if not target.exists() and not target.is_symlink():
+                if source["extraction"]["status"] in ("ok", "partial"):
+                    self.warn("EXTRACT_MISSING", rel, source["id"], "no extracted text: locators cannot be checked")
+                return None
+            if not target.is_file() or not self.inside_root(target):
+                raise ValueError("not a file inside the case")
+            return load_blocks(target)
+        except (ValueError, OSError):
+            self.error("FILE_CORRUPT", rel, source["id"], "extracted text is not valid UTF-8 JSON blocks")
+            return None
+
     def check_locator(self, file, owner, source, locator):
-        if source is not None and source["type"] not in LOCATOR_SOURCE_TYPES[locator["kind"]]:
+        if source is None:
+            return
+        if source["type"] not in LOCATOR_SOURCE_TYPES[locator["kind"]]:
             self.error("LOCATOR_MISMATCH", file, owner, f"locator {locator['kind']} does not fit source type {source['type']}")
+            return
+        if source["extraction"]["status"] in UNREADABLE_EXTRACTION:
+            return
+        blocks = self.extraction_blocks(source)
+        if blocks is None:
+            return
+        found = matching_blocks(blocks, locator)
+        if not found:
+            self.error("LOCATOR_NOT_FOUND", file, owner, f"locator {locator['kind']} points to no block of {source['id']}")
+        elif "quote" in locator and not any(quote_in(locator["quote"], block["text"]) for block in found):
+            self.error("QUOTE_NOT_FOUND", file, owner, f"quote is not in the text of the block of {source['id']}")
 
     def check_claims(self):
         file = "evidence/claims.json"

@@ -14,6 +14,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
+import evidence_blocks as eb  # noqa: E402
 import validate_project as vp  # noqa: E402
 
 CONTRACTS = ROOT / "agent" / "contracts"
@@ -301,6 +302,10 @@ class MalformedCases(CaseTestCase):
         self.assertIn("`Режим: продукт.`", product)
         self.assertNotIn("@docs/development-rules.md", claude)
         self.assertNotRegex(product, r"git (add|commit|push|switch|checkout)")
+        for target in ("agent/workflows/evidence.md", "agent/knowledge/evidence.md"):
+            self.assertIn(target, product)
+            text = (ROOT / target).read_text(encoding="utf-8")
+            self.assertNotRegex(text, r"git (add|commit|push|switch|checkout|merge|rebase)")
 
     def test_cycle_in_supersedes_is_decision_supersede(self):
         def change(data):
@@ -352,6 +357,104 @@ class MalformedCases(CaseTestCase):
         self.assertEqual(result.stderr, b"")
         report = vp.validate_case(moved)
         self.assertEqual([f.code for f in report.errors], ["OUTPUT_LINK"])
+
+
+class BlockMatching(unittest.TestCase):
+    def block(self, n, locator, text="текст", **extra):
+        return {"n": n, "locator": locator, "text": text, **extra}
+
+    def blocks(self):
+        return [
+            self.block(1, {"kind": "paragraph", "index": 1}, "Первый", heading="Цены"),
+            self.block(2, {"kind": "paragraph", "index": 2}, "Второй", heading="Цены"),
+            self.block(3, {"kind": "page", "page": 4}, "Страница"),
+            self.block(4, {"kind": "doc_table", "table": 1, "row": 2}, "Ячейка | 5"),
+            self.block(5, {"kind": "rows", "from": 3, "to": 3}, "март | 10"),
+            self.block(6, {"kind": "rows", "from": 7, "to": 7}, "июль | 12"),
+            self.block(7, {"kind": "cells", "sheet": "Лист", "range": "A2:C2"}, "а | б | в"),
+            self.block(8, {"kind": "cells", "sheet": "Лист", "range": "B5"}, "г"),
+        ]
+
+    def ns(self, locator):
+        return [b["n"] for b in eb.matching_blocks(self.blocks(), locator)]
+
+    def test_each_kind_finds_its_blocks_and_only_them(self):
+        cases = [
+            ({"kind": "section", "heading": "Цены"}, [1, 2]),
+            ({"kind": "section", "heading": "цены"}, []),
+            ({"kind": "paragraph", "index": 2}, [2]),
+            ({"kind": "paragraph", "index": 9}, []),
+            ({"kind": "page", "page": 4}, [3]),
+            ({"kind": "page", "page": 1}, []),
+            ({"kind": "doc_table", "table": 1, "row": 2}, [4]),
+            ({"kind": "doc_table", "table": 1, "row": 3}, []),
+            ({"kind": "doc_table", "table": 2, "row": 2}, []),
+            ({"kind": "rows", "from": 2, "to": 5}, [5]),
+            ({"kind": "rows", "from": 3, "to": 7}, [5, 6]),
+            ({"kind": "rows", "from": 8, "to": 9}, []),
+            ({"kind": "cells", "sheet": "Лист", "range": "B2"}, [7]),
+            ({"kind": "cells", "sheet": "Лист", "range": "C1:D3"}, [7]),
+            ({"kind": "cells", "sheet": "Лист", "range": "A1:C9"}, [7, 8]),
+            ({"kind": "cells", "sheet": "Лист", "range": "D2"}, []),
+            ({"kind": "cells", "sheet": "Другой", "range": "A2"}, []),
+        ]
+        for locator, expected in cases:
+            with self.subTest(locator):
+                self.assertEqual(self.ns(locator), expected)
+
+    def test_a_range_that_cannot_be_read_points_nowhere(self):
+        for text in ("", "A", "2:B", "A1:", "a2", "A2:B", "A2-B3"):
+            with self.subTest(text):
+                self.assertEqual(self.ns({"kind": "cells", "sheet": "Лист", "range": text}), [])
+        broken = [self.block(1, {"kind": "cells", "sheet": "Лист", "range": "???"})]
+        self.assertEqual(eb.matching_blocks(broken, {"kind": "cells", "sheet": "Лист", "range": "A1"}), [])
+
+    def test_quote_ignores_whitespace_but_not_case(self):
+        text = "Один участник может\nвзять   не больше\tтрёх книг."
+        self.assertTrue(eb.quote_in("участник может взять не больше трёх", text))
+        self.assertTrue(eb.quote_in("участник\n может", text))
+        self.assertFalse(eb.quote_in("Участник может", text))
+        self.assertFalse(eb.quote_in("   ", text))
+        self.assertEqual(eb.collapse(" a \n b "), "a b")
+
+    def test_number_is_not_found_inside_a_longer_one(self):
+        for text, found in (
+            ("до 140 в месяц", True), ("1140", False), ("0.140", False), ("0,140", False),
+            ("140", True), ("140.5", False), ("140,5", False), ("1140 и 140", True),
+            ("в 2025 году 140.", True), ("140, 150", True), ("а140", True),
+        ):
+            with self.subTest(text):
+                self.assertEqual(eb.quote_in("140", text), found)
+        self.assertTrue(eb.quote_in("0.140", "значение 0.140 тут"))
+        self.assertTrue(eb.quote_in("около 140", "около 1140 и около 140"))
+        self.assertFalse(eb.quote_in("около 140", "около 1140"))
+
+    def test_number_is_not_found_inside_a_grouped_or_signed_one(self):
+        for quote, text, found in (
+            ("140", "1 140", False), ("140", "1 140", False), ("140", "140 000", False),
+            ("140", "140 000", False), (".140", "0.140", False), (",5", "140,5", False),
+            ("140", "в 140 случаях", True), ("2025 год", "за 2025 год", True), ("140", "2025 140", True),
+            ("140", "до 140 000 и 140", True), (".140", "значение .140 тут", True), (",5", "коэффициент ,5 тут", True),
+            ("140", "140 тысяч", True), ("140", "140 1000", True),
+        ):
+            with self.subTest(quote=quote, text=text):
+                self.assertEqual(eb.quote_in(quote, text), found)
+
+    def test_load_blocks_rejects_bad_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "x.jsonl"
+            good = json.dumps({"n": 1, "locator": {"kind": "paragraph", "index": 1}, "text": "а б"},
+                              ensure_ascii=False)
+            path.write_bytes((good + "\n\n").encode("utf-8"))
+            self.assertEqual(eb.load_blocks(path)[0]["text"], "а б")
+            bad = [b"\xff\xfe", b"not json\n", b"[]\n", b'{"n": 1, "locator": {}}\n',
+                   b'{"n": 1, "locator": [], "text": "x"}\n', b'{"n": "1", "locator": {}, "text": "x"}\n',
+                   b'{"n": 1, "locator": {}, "text": 5}\n']
+            for data in bad:
+                with self.subTest(data):
+                    path.write_bytes(data)
+                    with self.assertRaises(ValueError):
+                        eb.load_blocks(path)
 
 
 SOURCES = "evidence/sources.json"
@@ -738,6 +841,9 @@ class BranchCoverage(Mutating):
         def web_locators():
             self.rec(CLAIMS, "CLM-0007", lambda r: r["supports"][0].update(locator={"kind": "paragraph", "index": 2}))
             self.rec(CLAIMS, "CLM-0004", lambda r: r["supports"][0].update(locator={"kind": "doc_table", "table": 1, "row": 2}))
+            path = self.case / "sources" / "extracted" / "SRC-0003.jsonl"
+            table_block = {"n": 99, "locator": {"kind": "doc_table", "table": 1, "row": 2}, "text": "Тариф | 150"}
+            path.write_bytes(path.read_bytes() + json.dumps(table_block, ensure_ascii=False).encode("utf-8") + b"\n")
 
         def range_estimate():
             self.journal(lambda ls: self.line(ls, "ACT-0003", "end")["cost"]["amounts"].update(input_tokens={"min": 4000, "max": 6000}))
@@ -774,6 +880,160 @@ class BranchCoverage(Mutating):
             ("proposed decision without proposal", lambda: self.rec(DECISIONS, "DEC-0002", proposed_without_proposal), ["DECISION_CHOICE_STATE"], []),
         ]
         self.each(cases)
+
+
+EXTRACTED = "sources/extracted"
+# type -> (blocks of the generated extraction, locator that finds them, locator that does not)
+EXTRACTIONS = {
+    "md": ([{"locator": {"kind": "paragraph", "index": 1}, "text": "Текст раздела: 140 штук.", "heading": "Раздел"}],
+           [{"kind": "section", "heading": "Раздел"}, {"kind": "paragraph", "index": 1}],
+           [{"kind": "section", "heading": "Нет"}, {"kind": "paragraph", "index": 9}]),
+    "pdf": ([{"locator": {"kind": "page", "page": 3}, "text": "Страница: 140 штук."}],
+            [{"kind": "page", "page": 3}], [{"kind": "page", "page": 4}]),
+    "xlsx": ([{"locator": {"kind": "cells", "sheet": "Лист", "range": "A2:B2"}, "text": "Январь | 140",
+               "cells": {"A2": "Январь", "B2": 140}}],
+             [{"kind": "cells", "sheet": "Лист", "range": "B2"}, {"kind": "cells", "sheet": "Лист", "range": "A1:C3"}],
+             [{"kind": "cells", "sheet": "Лист", "range": "D9"}, {"kind": "cells", "sheet": "Другой", "range": "B2"}]),
+    "csv": ([{"locator": {"kind": "rows", "from": 3, "to": 3}, "text": "март | 140", "cells": ["март", "140"]}],
+            [{"kind": "rows", "from": 2, "to": 4}], [{"kind": "rows", "from": 8, "to": 9}]),
+    "docx": ([{"locator": {"kind": "doc_table", "table": 1, "row": 2}, "text": "Показатель | 140"}],
+             [{"kind": "doc_table", "table": 1, "row": 2}], [{"kind": "doc_table", "table": 1, "row": 3}]),
+}
+
+
+class EvidenceChecks(Mutating):
+    """The locator must point to a block of the extracted text and the quote must be in it."""
+
+    extra = 0
+    claims = 0
+
+    def add_source(self, kind, blocks=None, status="ok"):
+        """Register an extra source with a file and an extraction; return its ID."""
+        self.extra += 1
+        source_id = f"SRC-{4 + self.extra:04d}"
+        name = f"sources/extra-{self.extra}.{kind}"
+        data = f"stub {source_id}".encode()
+        (self.case / name).write_bytes(data)
+        record = {
+            "id": source_id, "created_at": "2026-11-02T10:00:00+03:00", "record_status": "active",
+            "type": kind, "title": "Добавленный", "location": {"path": name}, "origin": "user_provided",
+            "allowed": True, "retrieved_at": "2026-11-02T10:00:00+03:00", "sha256": hashlib.sha256(data).hexdigest(),
+            "extraction": {"status": status, "complete": status == "ok", "limits": "Тест."},
+        }
+        self.edit(SOURCES, lambda d: d["records"].append(record))
+        if blocks is not None:
+            self.write_blocks(source_id, blocks)
+        return source_id
+
+    def write_blocks(self, source_id, blocks):
+        lines = [json.dumps({"n": number} | block, ensure_ascii=False) for number, block in enumerate(blocks, 1)]
+        (self.case / EXTRACTED / f"{source_id}.jsonl").write_bytes(("\n".join(lines) + "\n").encode("utf-8"))
+
+    def add_claim(self, source_id, locator, status="confirmed"):
+        self.claims += 1
+        claim = {
+            "id": f"CLM-{100 + self.claims:04d}", "created_at": "2026-11-02T10:00:00+03:00", "text": "Проверка.",
+            "kind": "fact", "status": status,
+            "supports": [{"source_id": source_id, "locator": locator, "note": "Проверка"}],
+            "contradicts": [], "derived_from": [], "limits": None,
+        }
+        self.edit(CLAIMS, lambda d: d["records"].append(claim))
+
+    def check_locators(self, which, expected_errors, quote=None):
+        for kind, (blocks, found, missing) in EXTRACTIONS.items():
+            for locator in (found, missing)[which]:
+                with self.subTest(kind=kind, locator=locator):
+                    self.reset()
+                    self.add_claim(self.add_source(kind, blocks), locator | ({"quote": quote} if quote else {}))
+                    self.assertEqual(codes(self.run_case()), (expected_errors, []))
+
+    def test_locator_that_points_to_a_block_passes_for_every_kind(self):
+        self.check_locators(0, [])
+        self.check_locators(0, [], quote="140")
+
+    def test_locator_without_a_block_is_not_found_for_every_kind(self):
+        self.check_locators(1, ["LOCATOR_NOT_FOUND"])
+
+    def test_quote_must_be_in_a_block_the_locator_points_to(self):
+        self.check_locators(0, ["QUOTE_NOT_FOUND"], quote="999")
+
+    def test_demo_quote_from_another_source_is_not_found(self):
+        self.rec(CLAIMS, "CLM-0001", lambda r: r["supports"][0]["locator"].update(quote="не больше пяти книг"))
+        self.assertEqual(codes(self.run_case()), (["QUOTE_NOT_FOUND"], []))
+
+    def test_quote_with_other_whitespace_passes_and_other_case_does_not(self):
+        text = "Один  участник может\nвзять не больше трёх книг."
+        locator = {"kind": "section", "heading": "Раздел"}
+        for quote, errors in (("участник может взять", []), ("Участник может", ["QUOTE_NOT_FOUND"])):
+            with self.subTest(quote):
+                self.reset()
+                source = self.add_source("md", [{"locator": {"kind": "paragraph", "index": 1}, "text": text, "heading": "Раздел"}])
+                self.add_claim(source, locator | {"quote": quote})
+                self.assertEqual(codes(self.run_case()), (errors, []))
+
+    def test_number_quote_is_not_taken_from_a_longer_number(self):
+        for text, errors in (("В 1140 и 0.140 заявок.", ["QUOTE_NOT_FOUND"]), ("В 1140 и 140 заявок.", [])):
+            with self.subTest(text):
+                self.reset()
+                source = self.add_source("csv", [{"locator": {"kind": "rows", "from": 2, "to": 2}, "text": text}])
+                self.add_claim(source, {"kind": "rows", "from": 2, "to": 2, "quote": "140"})
+                self.assertEqual(codes(self.run_case()), (errors, []))
+
+    def test_corrupt_extraction_is_file_corrupt_once_and_never_a_crash(self):
+        for data in (b"\xff\xfe", b"not json\n", b'{"n": 1, "locator": {}}\n', b"[]\n"):
+            with self.subTest(data):
+                self.reset()
+                (self.case / EXTRACTED / "SRC-0001.jsonl").write_bytes(data)
+                report = self.run_case()
+                self.assertEqual(codes(report), (["FILE_CORRUPT"], []))
+                self.assertEqual(report.errors[0].file, f"{EXTRACTED}/SRC-0001.jsonl")
+                self.assertEqual(self.cli(self.case).returncode, 1)
+
+    def test_locator_of_a_wrong_kind_is_only_a_mismatch(self):
+        self.rec(CLAIMS, "CLM-0007", lambda r: r["supports"][0].update(locator={"kind": "page", "page": 1, "quote": "нет"}))
+        self.assertEqual(codes(self.run_case()), (["LOCATOR_MISMATCH"], []))
+
+    def test_missing_extraction_warns_once_per_source(self):
+        (self.case / EXTRACTED / "SRC-0003.jsonl").unlink()
+        report = self.run_case()
+        self.assertEqual(codes(report), ([], ["EXTRACT_MISSING"]))
+        self.assertEqual(report.warnings[0].record_id, "SRC-0003")
+
+    def test_missing_extraction_of_a_source_without_text_is_not_a_finding(self):
+        self.rec(SOURCES, "SRC-0003", lambda r: r["extraction"].update(status="unavailable", complete=False))
+        (self.case / EXTRACTED / "SRC-0003.jsonl").unlink()
+        self.rec(CLAIMS, "CLM-0007", lambda r: r.update(status="unconfirmed"))
+        self.rec(CLAIMS, "CLM-0008", lambda r: r["contradicts"][0]["locator"].update(heading="Нет такого"))
+        errors, warnings = codes(self.run_case())
+        self.assertEqual(errors, [])
+        self.assertNotIn("EXTRACT_MISSING", warnings)
+
+    def test_calculation_inputs_are_checked_like_claims(self):
+        cases = (({"kind": "rows", "from": 20, "to": 21}, "LOCATOR_NOT_FOUND"),
+                 ({"kind": "rows", "from": 2, "to": 13, "quote": "нет такого"}, "QUOTE_NOT_FOUND"))
+        for locator, code in cases:
+            with self.subTest(code):
+                self.reset()
+                self.rec(CALCS, "CALC-0001", lambda r: r["inputs"][0].update(locator=locator))
+                self.assertEqual(codes(self.run_case()), ([code], []))
+
+    def test_withdrawn_claim_is_skipped_and_withdrawn_source_is_still_checked(self):
+        self.rec(CLAIMS, "CLM-0005", lambda r: r["supports"].append(
+            {"source_id": "SRC-0001", "locator": {"kind": "paragraph", "index": 99}, "note": "Нет"}))
+        self.assertEqual(codes(self.run_case()), ([], []))
+        self.rec(CLAIMS, "CLM-0001", lambda r: r["contradicts"][0]["locator"].update(heading="Нет такого"))
+        self.assertEqual(codes(self.run_case()), (["LOCATOR_NOT_FOUND"], []))
+
+    def test_findings_never_hold_material_text(self):
+        marker = "СЕКРЕТНЫЙ-ТЕКСТ-77"
+        source = self.add_source("md", [{"locator": {"kind": "paragraph", "index": 1}, "text": marker, "heading": marker}])
+        self.add_claim(source, {"kind": "paragraph", "index": 1, "quote": marker + "-другая"})
+        self.add_claim(source, {"kind": "section", "heading": marker + "-нет"})
+        report = self.run_case()
+        self.assertEqual(sorted(f.code for f in report.errors), ["LOCATOR_NOT_FOUND", "QUOTE_NOT_FOUND"])
+        shown = self.cli(self.case, "--json").stdout.decode("utf-8")
+        self.assertNotIn(marker, shown)
+        self.assertNotIn(marker, "".join(f.message for f in report.errors))
 
 
 if __name__ == "__main__":
