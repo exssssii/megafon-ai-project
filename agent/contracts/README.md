@@ -18,7 +18,7 @@
 |---|---|---|
 | `case.json` | версия формата, `case_id`, название, дата создания | один раз; единственный обязательный файл |
 | `brief.md` | бриф | текст, без контракта |
-| `sources/` | копии материалов; извлечённый текст в `sources/extracted/<SRC-id>.*` | файлы не меняются после регистрации |
+| `sources/` | копии материалов; извлечённый текст в `sources/extracted/<SRC-id>.jsonl`, отчёт чтения в `sources/extracted/<SRC-id>.report.json` | исходные файлы не меняются после регистрации; `sources/extracted/` обновляется повторным чтением, пока на источник нет ссылок; `sources/incoming/` — временные файлы страниц, утилита удаляет их после регистрации |
 | `evidence/sources.json` | источники (`SRC`) | реестр |
 | `evidence/claims.json` | утверждения (`CLM`) | реестр |
 | `evidence/calculations.json` | расчёты (`CALC`) | реестр |
@@ -92,6 +92,10 @@
 - `extraction.status`: `ok`, `partial`, `empty`, `unreadable`, `unsupported`, `over_limit`, `unavailable` (последнее для сайта); `complete` — логическое; `limits` — текст границ чтения.
 - Файл источника не меняется после регистрации: другой отпечаток — `SOURCE_CHANGED`, нужна новая запись источника.
 - Отзыв: `record_status: "withdrawn"` и `status_reason`.
+
+### Извлечённый текст
+
+`sources/extracted/<SRC-id>.jsonl` создаётся командами `tools/read_material.py add` и `add-web`. Одна строка — блок: `n` (номер блока с единицы), `locator` (объект контракта), `text`, необязательные `heading` (ближайший заголовок), `cells` (значения строки таблицы: список для CSV, адрес → значение для XLSX), `formula_no_value` (адреса формул без сохранённого значения). `locator` копируется в `supports`, `contradicts` и `inputs` без изменений, `quote` добавляется при цитировании. При статусах без текста файла нет. Записи `SRC` создаёт эта утилита, руками их не пишут.
 
 ### Локатор
 

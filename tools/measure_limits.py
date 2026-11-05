@@ -55,7 +55,7 @@ def make_docx(path: Path) -> None:
 def measure(path: Path) -> dict:
     started = time.perf_counter()
     result = subprocess.run(
-        [sys.executable, str(TOOLS / "probe_read.py"), str(path)],
+        [sys.executable, str(TOOLS / "read_material.py"), "inspect", str(path)],
         capture_output=True,
         encoding="utf-8",
     )
