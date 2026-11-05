@@ -73,6 +73,8 @@ BRACKET_RE = re.compile(r"\[([^\[\]\n]{1,300})\]")
 LOOKS_LIKE_ID_RE = re.compile(rf"(?i:{PREFIX_ALTERNATIVES})-\w+")
 DRIVE_RE = re.compile(r"^[A-Za-z]:")
 CHECKPOINT_FILE_RE = re.compile(r"CKP-([0-9]{4,})\.json")
+# Set-aside checkpoint files: their ID stays taken, the record is unavailable.
+HIDDEN_CHECKPOINT_RE = re.compile(r"\.(?:lost|rejected)-CKP-([0-9]{4,})\.json(?:\.[0-9]+)?")
 # A command or formula token that is an absolute path: "/dir", "C:\x", "\\host", "~/x".
 ABSOLUTE_TOKEN_RE = re.compile(r"""^["']?(?:/[A-Za-z._~-]|[A-Za-z]:[\\/]|\\\\|~[\\/])""")
 
@@ -86,10 +88,22 @@ class Finding:
 
 
 @dataclass
+class CheckpointStatus:
+    """Verdict on one file of the checkpoint folder; `reason` is None when it is fit."""
+    name: str | None
+    number: int | None
+    seq: int | None
+    reason: str | None
+    missing: list[str] = field(default_factory=list)
+    previous: str | None = None
+
+
+@dataclass
 class Report:
     errors: list[Finding] = field(default_factory=list)
     warnings: list[Finding] = field(default_factory=list)
     current_checkpoint: str | None = None
+    checkpoints: list[CheckpointStatus] = field(default_factory=list)
 
 
 def prefix_of(record_id: str) -> str:
@@ -272,6 +286,7 @@ class Validator:
         case = self.case_document = self.load_case()
         raw = self.load_files()
         if not self.check_versions(case, raw):
+            self.judge_checkpoints(raw["checkpoints"])
             return self.report
         self.check_schemas(case, raw)
         self.register_ids(raw)
@@ -304,7 +319,7 @@ class Validator:
         return case
 
     def load_files(self) -> dict:
-        raw = {"registries": {}, "journal": self.load_journal(), "checkpoints": []}
+        raw = {"registries": {}, "journal": self.load_journal(), "checkpoints": [], "hidden": []}
         for rel, (_, prefix) in REGISTRIES.items():
             status, document = self.read(rel)
             if status == "corrupt":
@@ -316,6 +331,9 @@ class Validator:
         if folder.is_dir():
             for path in sorted(folder.iterdir()):
                 if path.name.startswith("."):
+                    hidden = HIDDEN_CHECKPOINT_RE.fullmatch(path.name)
+                    if hidden:
+                        raw["hidden"].append(f"CKP-{hidden.group(1)}")
                     continue
                 match = CHECKPOINT_FILE_RE.fullmatch(path.name)
                 status, document = self.read(f"{CHECKPOINT_DIR}/{path.name}") if match else ("stray", None)
@@ -457,6 +475,7 @@ class Validator:
         for item in raw["checkpoints"]:
             if item["name"]:
                 self.seen.add(item["name"])
+        self.seen.update(raw["hidden"])
 
     # --- references -----------------------------------------------------
 
@@ -807,6 +826,8 @@ class Validator:
             return
         for path in sorted(folder.rglob("*.md")):
             file = path.relative_to(self.root).as_posix()
+            if any(part.startswith(".") for part in file.split("/")):
+                continue
             try:
                 text = path.read_bytes().decode("utf-8-sig")
             except (UnicodeDecodeError, OSError):
@@ -842,20 +863,33 @@ class Validator:
 
     # --- checkpoints ----------------------------------------------------
 
-    def check_checkpoints(self, items):
-        if not items:
-            return
+    def judge_checkpoints(self, items):
+        """Decide which checkpoint files are fit and record the status of each. Returns (fit, unfit)."""
         seq_of = {}
         for item in items:
             doc = item["document"]
             seq = doc.get("seq") if isinstance(doc, dict) else None
-            if item["name"]:
-                seq_of[item["name"]] = seq if isinstance(seq, int) and not isinstance(seq, bool) else item["number"]
+            if item["name"] and isinstance(seq, int) and not isinstance(seq, bool):
+                seq_of[item["name"]] = seq
+        names = {item["name"] for item in items if item["name"]}
         fit, unfit = [], []
         for item in items:
-            reason = self.checkpoint_problem(item, seq_of)
+            reason = self.checkpoint_problem(item, seq_of, names)
             (unfit if reason else fit).append(item)
             item["reason"] = reason
+            document = item["document"]
+            seq = document.get("seq") if isinstance(document, dict) else None
+            previous = document.get("previous") if isinstance(document, dict) else None
+            self.report.checkpoints.append(CheckpointStatus(
+                item["name"], item["number"],
+                seq if isinstance(seq, int) and not isinstance(seq, bool) else None,
+                reason, item["missing"], previous if isinstance(previous, str) else None))
+        return fit, unfit
+
+    def check_checkpoints(self, items):
+        if not items:
+            return
+        fit, unfit = self.judge_checkpoints(items)
         if not fit:
             self.error("CHECKPOINT_NONE_VALID", CHECKPOINT_DIR, None,
                        "no valid checkpoint (" + "; ".join(self.describe(i) for i in unfit) + ")")
@@ -865,7 +899,9 @@ class Validator:
         current = max(fit, key=lambda i: (i["document"]["seq"], i["name"]))["document"]
         self.report.current_checkpoint = current["id"]
         file = f"{CHECKPOINT_DIR}/{current['id']}.json"
-        lost = [i for i in unfit if i["number"] is None or i["number"] > current["seq"]]
+        before = CHECKPOINT_FILE_RE.fullmatch(f"{current['previous']}.json") if current["previous"] else None
+        floor = int(before.group(1)) if before else 0
+        lost = [i for i in unfit if i["number"] is None or i["number"] > floor]
         if lost:
             self.warn("CHECKPOINT_FALLBACK", file, current["id"],
                       f"{current['id']} (seq {current['seq']}) is current; unusable newer files: "
@@ -885,10 +921,11 @@ class Validator:
     def stored(document, path):
         return next(a["sha256"] for a in document["artifacts"] if a["path"] == path)
 
-    def checkpoint_problem(self, item, seq_of) -> str | None:
+    def checkpoint_problem(self, item, seq_of, names) -> str | None:
         name, document = item["name"], item["document"]
         file = f"{CHECKPOINT_DIR}/{name}.json"
         item["hashes"] = {}
+        item["missing"] = []
         if item["status"] == "stray":
             return "unexpected file name"
         if item["status"] != "ok":
@@ -908,9 +945,10 @@ class Validator:
             return "inconsistent cost"
         previous = document["previous"]
         if previous is not None:
-            if previous not in seq_of:
+            if previous not in names:
                 return "previous checkpoint is missing"
-            if seq_of[previous] + 1 != document["seq"]:
+            # An unreadable previous file has no seq to compare with.
+            if previous in seq_of and seq_of[previous] + 1 != document["seq"]:
                 return "seq does not follow previous"
         for artifact in document["artifacts"]:
             if is_unsafe_path(artifact["path"]):
@@ -919,8 +957,11 @@ class Validator:
             target = self.root / artifact["path"]
             digest = sha256_of(target) if self.inside_root(target) and target.is_file() else None
             if digest is None:
-                return "an artifact is missing or unreadable"
+                item["missing"].append(artifact["path"])
+                continue
             item["hashes"][artifact["path"]] = digest
+        if item["missing"]:
+            return "an artifact is missing or unreadable"
         return None
 
     def check_checkpoint_links(self, document):
