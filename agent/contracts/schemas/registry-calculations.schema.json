@@ -1,0 +1,214 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:strategy-agent:contracts:registry-calculations",
+  "title": "evidence/calculations.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format_version",
+    "records"
+  ],
+  "properties": {
+    "format_version": {
+      "$ref": "urn:strategy-agent:contracts:common#/$defs/format_version"
+    },
+    "records": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/record"
+      }
+    }
+  },
+  "$defs": {
+    "input": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "source_id",
+            "locator",
+            "value",
+            "unit",
+            "period"
+          ],
+          "properties": {
+            "name": {
+              "$ref": "urn:strategy-agent:contracts:common#/$defs/text"
+            },
+            "value": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "unit": {
+              "$ref": "urn:strategy-agent:contracts:common#/$defs/nullable_text"
+            },
+            "period": {
+              "$ref": "urn:strategy-agent:contracts:common#/$defs/nullable_text"
+            },
+            "source_id": {
+              "$ref": "urn:strategy-agent:contracts:common#/$defs/any_id"
+            },
+            "locator": {
+              "$ref": "urn:strategy-agent:contracts:common#/$defs/locator"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "calculation_id",
+            "value",
+            "unit",
+            "period"
+          ],
+          "properties": {
+            "name": {
+              "$ref": "urn:strategy-agent:contracts:common#/$defs/text"
+            },
+            "value": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "unit": {
+              "$ref": "urn:strategy-agent:contracts:common#/$defs/nullable_text"
+            },
+            "period": {
+              "$ref": "urn:strategy-agent:contracts:common#/$defs/nullable_text"
+            },
+            "calculation_id": {
+              "$ref": "urn:strategy-agent:contracts:common#/$defs/any_id"
+            }
+          }
+        }
+      ]
+    },
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "value",
+        "unit",
+        "period"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "computed",
+            "not_computable"
+          ]
+        },
+        "value": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "unit": {
+          "$ref": "urn:strategy-agent:contracts:common#/$defs/nullable_text"
+        },
+        "period": {
+          "$ref": "urn:strategy-agent:contracts:common#/$defs/nullable_text"
+        }
+      },
+      "if": {
+        "properties": {
+          "status": {
+            "const": "computed"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "value": {
+            "type": "number"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "value": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    "record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "created_at",
+        "record_status",
+        "inputs",
+        "method",
+        "result",
+        "gaps",
+        "assumptions",
+        "reproduce"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "urn:strategy-agent:contracts:common#/$defs/calc_id"
+        },
+        "created_at": {
+          "$ref": "urn:strategy-agent:contracts:common#/$defs/datetime"
+        },
+        "record_status": {
+          "$ref": "urn:strategy-agent:contracts:common#/$defs/record_status"
+        },
+        "status_reason": {
+          "type": "string"
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/input"
+          }
+        },
+        "method": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "description"
+          ],
+          "properties": {
+            "kind": {
+              "enum": [
+                "tool",
+                "formula"
+              ]
+            },
+            "description": {
+              "$ref": "urn:strategy-agent:contracts:common#/$defs/text"
+            }
+          }
+        },
+        "result": {
+          "$ref": "#/$defs/result"
+        },
+        "gaps": {
+          "$ref": "urn:strategy-agent:contracts:common#/$defs/text_list"
+        },
+        "assumptions": {
+          "$ref": "urn:strategy-agent:contracts:common#/$defs/text_list"
+        },
+        "reproduce": {
+          "$ref": "urn:strategy-agent:contracts:common#/$defs/text"
+        }
+      }
+    }
+  }
+}

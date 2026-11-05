@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:strategy-agent:contracts:registry-questions",
+  "title": "research/questions.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format_version", "records"],
+  "properties": {
+    "format_version": {"$ref": "urn:strategy-agent:contracts:common#/$defs/format_version"},
+    "records": {"type": "array", "items": {"$ref": "#/$defs/record"}}
+  },
+  "$defs": {
+    "record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "created_at", "record_status", "question", "affects",
+        "needed_evidence", "status", "findings", "gap"
+      ],
+      "properties": {
+        "id": {"$ref": "urn:strategy-agent:contracts:common#/$defs/q_id"},
+        "created_at": {"$ref": "urn:strategy-agent:contracts:common#/$defs/datetime"},
+        "record_status": {"$ref": "urn:strategy-agent:contracts:common#/$defs/record_status"},
+        "status_reason": {"type": "string"},
+        "question": {"$ref": "urn:strategy-agent:contracts:common#/$defs/text"},
+        "affects": {"$ref": "urn:strategy-agent:contracts:common#/$defs/text"},
+        "needed_evidence": {"$ref": "urn:strategy-agent:contracts:common#/$defs/text"},
+        "status": {"enum": ["open", "answered", "partial", "blocked"]},
+        "findings": {"$ref": "urn:strategy-agent:contracts:common#/$defs/id_list"},
+        "gap": {"$ref": "urn:strategy-agent:contracts:common#/$defs/nullable_text"}
+      }
+    }
+  }
+}

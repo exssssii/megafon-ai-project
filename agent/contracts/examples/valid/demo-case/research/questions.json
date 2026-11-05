@@ -1,0 +1,32 @@
+{
+  "format_version": 1,
+  "records": [
+    {
+      "id": "Q-0001",
+      "created_at": "2026-11-02T10:00:00+03:00",
+      "record_status": "active",
+      "question": "Сколько заявок получает сервис в месяц?",
+      "affects": "Выбор между сохранением и развитием",
+      "needed_evidence": "Помесячные данные за год",
+      "status": "answered",
+      "findings": [
+        "CLM-0003",
+        "CALC-0001"
+      ],
+      "gap": null
+    },
+    {
+      "id": "Q-0002",
+      "created_at": "2026-11-02T10:00:00+03:00",
+      "record_status": "active",
+      "question": "Окупается ли пункт обмена?",
+      "affects": "Выбор между сохранением и закрытием",
+      "needed_evidence": "Доходы пункта за год",
+      "status": "open",
+      "findings": [
+        "CALC-0002"
+      ],
+      "gap": "Нет данных о доходах пункта"
+    }
+  ]
+}

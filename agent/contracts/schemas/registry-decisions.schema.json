@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:strategy-agent:contracts:registry-decisions",
+  "title": "decisions/decisions.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format_version",
+    "records"
+  ],
+  "properties": {
+    "format_version": {
+      "$ref": "urn:strategy-agent:contracts:common#/$defs/format_version"
+    },
+    "records": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/record"
+      }
+    }
+  },
+  "$defs": {
+    "proposal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "option_id",
+        "rationale",
+        "proposed_at",
+        "action_id"
+      ],
+      "properties": {
+        "option_id": {
+          "$ref": "urn:strategy-agent:contracts:common#/$defs/any_id"
+        },
+        "rationale": {
+          "$ref": "urn:strategy-agent:contracts:common#/$defs/text"
+        },
+        "proposed_at": {
+          "$ref": "urn:strategy-agent:contracts:common#/$defs/datetime"
+        },
+        "action_id": {
+          "$ref": "urn:strategy-agent:contracts:common#/$defs/any_id"
+        }
+      }
+    },
+    "choice": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "option_id",
+        "user_statement",
+        "chosen_at",
+        "action_id"
+      ],
+      "properties": {
+        "option_id": {
+          "$ref": "urn:strategy-agent:contracts:common#/$defs/any_id"
+        },
+        "user_statement": {
+          "$ref": "urn:strategy-agent:contracts:common#/$defs/text"
+        },
+        "chosen_at": {
+          "$ref": "urn:strategy-agent:contracts:common#/$defs/datetime"
+        },
+        "action_id": {
+          "$ref": "urn:strategy-agent:contracts:common#/$defs/any_id"
+        }
+      }
+    },
+    "record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "created_at",
+        "topic",
+        "status",
+        "proposal"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "urn:strategy-agent:contracts:common#/$defs/dec_id"
+        },
+        "created_at": {
+          "$ref": "urn:strategy-agent:contracts:common#/$defs/datetime"
+        },
+        "topic": {
+          "$ref": "urn:strategy-agent:contracts:common#/$defs/topic"
+        },
+        "status": {
+          "enum": [
+            "proposed",
+            "chosen",
+            "superseded"
+          ]
+        },
+        "proposal": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/proposal"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "choice": {
+          "$ref": "#/$defs/choice"
+        },
+        "supersedes": {
+          "$ref": "urn:strategy-agent:contracts:common#/$defs/any_id"
+        },
+        "change_reason": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

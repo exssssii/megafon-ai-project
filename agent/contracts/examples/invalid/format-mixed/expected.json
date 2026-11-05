@@ -1,0 +1,10 @@
+{
+  "errors": [
+    "FORMAT_MIXED"
+  ],
+  "warnings": [],
+  "supported_versions": [
+    1,
+    2
+  ]
+}

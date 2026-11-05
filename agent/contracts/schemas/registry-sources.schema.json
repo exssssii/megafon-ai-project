@@ -1,0 +1,177 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:strategy-agent:contracts:registry-sources",
+  "title": "evidence/sources.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format_version",
+    "records"
+  ],
+  "properties": {
+    "format_version": {
+      "$ref": "urn:strategy-agent:contracts:common#/$defs/format_version"
+    },
+    "records": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/record"
+      }
+    }
+  },
+  "$defs": {
+    "record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "created_at",
+        "record_status",
+        "type",
+        "title",
+        "location",
+        "origin",
+        "allowed",
+        "retrieved_at",
+        "sha256",
+        "extraction"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "urn:strategy-agent:contracts:common#/$defs/src_id"
+        },
+        "created_at": {
+          "$ref": "urn:strategy-agent:contracts:common#/$defs/datetime"
+        },
+        "record_status": {
+          "$ref": "urn:strategy-agent:contracts:common#/$defs/record_status"
+        },
+        "status_reason": {
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "md",
+            "txt",
+            "docx",
+            "pdf",
+            "csv",
+            "xlsx",
+            "web"
+          ]
+        },
+        "title": {
+          "$ref": "urn:strategy-agent:contracts:common#/$defs/text"
+        },
+        "location": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "path"
+              ],
+              "properties": {
+                "path": {
+                  "$ref": "urn:strategy-agent:contracts:common#/$defs/rel_path"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "url"
+              ],
+              "properties": {
+                "url": {
+                  "$ref": "urn:strategy-agent:contracts:common#/$defs/text"
+                }
+              }
+            }
+          ]
+        },
+        "origin": {
+          "enum": [
+            "user_provided",
+            "public_web",
+            "own_training"
+          ]
+        },
+        "allowed": {
+          "type": "boolean"
+        },
+        "retrieved_at": {
+          "$ref": "urn:strategy-agent:contracts:common#/$defs/datetime"
+        },
+        "sha256": {
+          "oneOf": [
+            {
+              "$ref": "urn:strategy-agent:contracts:common#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "extraction": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "complete",
+            "limits"
+          ],
+          "properties": {
+            "status": {
+              "enum": [
+                "ok",
+                "partial",
+                "empty",
+                "unreadable",
+                "unsupported",
+                "over_limit",
+                "unavailable"
+              ]
+            },
+            "complete": {
+              "type": "boolean"
+            },
+            "limits": {
+              "type": "string"
+            }
+          }
+        },
+        "source_url": {
+          "$ref": "urn:strategy-agent:contracts:common#/$defs/text"
+        }
+      },
+      "if": {
+        "required": [
+          "location"
+        ],
+        "properties": {
+          "location": {
+            "required": [
+              "path"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "sha256": {
+            "type": "string"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "sha256": {
+            "type": "null"
+          }
+        }
+      }
+    }
+  }
+}

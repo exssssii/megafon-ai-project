@@ -1,0 +1,55 @@
+{
+  "format_version": 1,
+  "id": "CKP-0002",
+  "case_id": "demo-case",
+  "created_at": "2026-11-02T10:00:00+03:00",
+  "seq": 2,
+  "previous": "CKP-0001",
+  "goal": "Выбрать направление для «Книжной полки» и подготовить две стратегии",
+  "stage": "strategies",
+  "artifacts": [
+    {
+      "path": "brief.md",
+      "sha256": "bb3290f9b5de51ec9d6848618ac6d077781cbd6775ae46f670a0a66d87db1164"
+    },
+    {
+      "path": "outputs/product-strategy.md",
+      "sha256": "2882f1465567c1317290c9fe34db129a4732390f03838b28d3fecf73b63b3fb6"
+    },
+    {
+      "path": "outputs/communication-strategy.md",
+      "sha256": "c9a3c685e3f815761e80dfa0d02b9cc864af391c44a717cbbfa1c676dd509543"
+    },
+    {
+      "path": "outputs/validation-plan.md",
+      "sha256": "c8b11079631e145ef2ceff6ce9eca6424dfc96bfb353bd72df6b43aed06007ab"
+    }
+  ],
+  "completed_actions": [
+    "ACT-0001",
+    "ACT-0002",
+    "ACT-0003",
+    "ACT-0004",
+    "ACT-0006",
+    "ACT-0007",
+    "ACT-0008",
+    "ACT-0009",
+    "ACT-0005"
+  ],
+  "human_choices": [
+    "DEC-0001",
+    "DEC-0002"
+  ],
+  "open_items": [
+    "Проверить окупаемость пункта"
+  ],
+  "next_step": "Согласовать план проверки",
+  "totals": {
+    "elapsed_seconds": 3600,
+    "time_to_first_result_seconds": 600,
+    "human_active_seconds": null,
+    "cost": {
+      "basis": "unknown"
+    }
+  }
+}

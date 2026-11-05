@@ -1,0 +1,365 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:strategy-agent:contracts:common",
+  "title": "Shared definitions",
+  "$defs": {
+    "format_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "datetime": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}([.][0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$",
+      "format": "date-time"
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1
+    },
+    "nullable_text": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "case_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*$"
+    },
+    "topic": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "rel_path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "src_id": {
+      "type": "string",
+      "pattern": "^SRC-[0-9]{4,}$"
+    },
+    "clm_id": {
+      "type": "string",
+      "pattern": "^CLM-[0-9]{4,}$"
+    },
+    "calc_id": {
+      "type": "string",
+      "pattern": "^CALC-[0-9]{4,}$"
+    },
+    "q_id": {
+      "type": "string",
+      "pattern": "^Q-[0-9]{4,}$"
+    },
+    "opt_id": {
+      "type": "string",
+      "pattern": "^OPT-[0-9]{4,}$"
+    },
+    "dec_id": {
+      "type": "string",
+      "pattern": "^DEC-[0-9]{4,}$"
+    },
+    "act_id": {
+      "type": "string",
+      "pattern": "^ACT-[0-9]{4,}$"
+    },
+    "ckp_id": {
+      "type": "string",
+      "pattern": "^CKP-[0-9]{4,}$"
+    },
+    "any_id": {
+      "type": "string",
+      "pattern": "^(SRC|CLM|CALC|Q|OPT|DEC|ACT|CKP)-[0-9]{4,}$"
+    },
+    "id_list": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/any_id"
+      }
+    },
+    "text_list": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/text"
+      }
+    },
+    "record_status": {
+      "enum": [
+        "active",
+        "withdrawn"
+      ]
+    },
+    "locator": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "heading"
+          ],
+          "properties": {
+            "kind": {
+              "const": "section"
+            },
+            "heading": {
+              "$ref": "#/$defs/text"
+            },
+            "quote": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "index"
+          ],
+          "properties": {
+            "kind": {
+              "const": "paragraph"
+            },
+            "index": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "quote": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "page"
+          ],
+          "properties": {
+            "kind": {
+              "const": "page"
+            },
+            "page": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "quote": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "sheet",
+            "range"
+          ],
+          "properties": {
+            "kind": {
+              "const": "cells"
+            },
+            "sheet": {
+              "$ref": "#/$defs/text"
+            },
+            "range": {
+              "$ref": "#/$defs/text"
+            },
+            "quote": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "from",
+            "to"
+          ],
+          "properties": {
+            "kind": {
+              "const": "rows"
+            },
+            "from": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "to": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "quote": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "table",
+            "row"
+          ],
+          "properties": {
+            "kind": {
+              "const": "doc_table"
+            },
+            "table": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "row": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "quote": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "amounts": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "input_tokens": {
+          "oneOf": [
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "min",
+                "max"
+              ],
+              "properties": {
+                "min": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "max": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              }
+            }
+          ]
+        },
+        "output_tokens": {
+          "oneOf": [
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "min",
+                "max"
+              ],
+              "properties": {
+                "min": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "max": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              }
+            }
+          ]
+        },
+        "money_usd": {
+          "oneOf": [
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "min",
+                "max"
+              ],
+              "properties": {
+                "min": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "max": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "cost": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "basis"
+      ],
+      "properties": {
+        "basis": {
+          "enum": [
+            "measured",
+            "estimated",
+            "unknown"
+          ]
+        },
+        "estimate_source": {
+          "$ref": "#/$defs/text"
+        },
+        "amounts": {
+          "$ref": "#/$defs/amounts"
+        }
+      },
+      "if": {
+        "properties": {
+          "basis": {
+            "enum": [
+              "measured",
+              "estimated"
+            ]
+          }
+        },
+        "required": [
+          "basis"
+        ]
+      },
+      "then": {
+        "required": [
+          "amounts"
+        ]
+      }
+    }
+  }
+}

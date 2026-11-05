@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:strategy-agent:contracts:case",
+  "title": "case.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format_version", "case_id", "title", "created_at"],
+  "properties": {
+    "format_version": {"$ref": "urn:strategy-agent:contracts:common#/$defs/format_version"},
+    "case_id": {"$ref": "urn:strategy-agent:contracts:common#/$defs/case_id"},
+    "title": {"$ref": "urn:strategy-agent:contracts:common#/$defs/text"},
+    "created_at": {"$ref": "urn:strategy-agent:contracts:common#/$defs/datetime"}
+  }
+}

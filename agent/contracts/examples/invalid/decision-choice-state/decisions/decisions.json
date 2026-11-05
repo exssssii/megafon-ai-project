@@ -1,0 +1,37 @@
+{
+  "format_version": 1,
+  "records": [
+    {
+      "id": "DEC-0001",
+      "created_at": "2026-11-02T10:00:00+03:00",
+      "topic": "direction",
+      "status": "superseded",
+      "proposal": {
+        "option_id": "OPT-0003",
+        "rationale": "Заявки стабильны, есть место для роста",
+        "proposed_at": "2026-11-02T10:00:00+03:00",
+        "action_id": "ACT-0003"
+      },
+      "choice": {
+        "option_id": "OPT-0003",
+        "user_statement": "Развиваем сервис",
+        "chosen_at": "2026-11-02T10:00:00+03:00",
+        "action_id": "ACT-0004"
+      }
+    },
+    {
+      "id": "DEC-0002",
+      "created_at": "2026-11-02T10:00:00+03:00",
+      "topic": "direction",
+      "status": "chosen",
+      "proposal": {
+        "option_id": "OPT-0003",
+        "rationale": "Развитие остаётся лучшим вариантом по спросу",
+        "proposed_at": "2026-11-02T10:00:00+03:00",
+        "action_id": "ACT-0007"
+      },
+      "supersedes": "DEC-0001",
+      "change_reason": "Пользователь изменил ограничение по бюджету"
+    }
+  ]
+}

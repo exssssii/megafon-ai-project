@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:strategy-agent:contracts:registry-options",
+  "title": "decisions/options.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format_version", "records"],
+  "properties": {
+    "format_version": {"$ref": "urn:strategy-agent:contracts:common#/$defs/format_version"},
+    "records": {"type": "array", "items": {"$ref": "#/$defs/record"}}
+  },
+  "$defs": {
+    "record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "created_at", "record_status", "title", "strategy_kind",
+        "audience_task", "action", "rejected_actions", "benefit_mechanism",
+        "economics", "preconditions", "objections", "risks", "reversibility",
+        "verification", "basis"
+      ],
+      "properties": {
+        "id": {"$ref": "urn:strategy-agent:contracts:common#/$defs/opt_id"},
+        "created_at": {"$ref": "urn:strategy-agent:contracts:common#/$defs/datetime"},
+        "record_status": {"$ref": "urn:strategy-agent:contracts:common#/$defs/record_status"},
+        "status_reason": {"type": "string"},
+        "title": {"$ref": "urn:strategy-agent:contracts:common#/$defs/text"},
+        "strategy_kind": {"enum": ["keep", "close", "develop"]},
+        "audience_task": {"$ref": "urn:strategy-agent:contracts:common#/$defs/text"},
+        "action": {"$ref": "urn:strategy-agent:contracts:common#/$defs/text"},
+        "rejected_actions": {"$ref": "urn:strategy-agent:contracts:common#/$defs/text_list"},
+        "benefit_mechanism": {"$ref": "urn:strategy-agent:contracts:common#/$defs/text"},
+        "economics": {"$ref": "urn:strategy-agent:contracts:common#/$defs/text"},
+        "preconditions": {"$ref": "urn:strategy-agent:contracts:common#/$defs/text_list"},
+        "objections": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "urn:strategy-agent:contracts:common#/$defs/text"}
+        },
+        "risks": {"$ref": "urn:strategy-agent:contracts:common#/$defs/text_list"},
+        "reversibility": {"$ref": "urn:strategy-agent:contracts:common#/$defs/text"},
+        "verification": {"$ref": "urn:strategy-agent:contracts:common#/$defs/text"},
+        "basis": {"$ref": "urn:strategy-agent:contracts:common#/$defs/id_list"}
+      }
+    }
+  }
+}

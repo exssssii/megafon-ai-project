@@ -1,0 +1,33 @@
+{
+  "format_version": 1,
+  "id": "CKP-0001",
+  "case_id": "demo-case",
+  "created_at": "2026-11-02T10:00:00+03:00",
+  "seq": 1,
+  "previous": null,
+  "goal": "Выбрать направление для «Книжной полки» и подготовить две стратегии",
+  "stage": "research",
+  "artifacts": [
+    {
+      "path": "brief.md",
+      "sha256": "bb3290f9b5de51ec9d6848618ac6d077781cbd6775ae46f670a0a66d87db1164"
+    }
+  ],
+  "completed_actions": [
+    "ACT-0001",
+    "ACT-0002"
+  ],
+  "human_choices": [],
+  "open_items": [
+    "Окупаемость пункта"
+  ],
+  "next_step": "Подготовить варианты",
+  "totals": {
+    "elapsed_seconds": 1200,
+    "time_to_first_result_seconds": 600,
+    "human_active_seconds": null,
+    "cost": {
+      "basis": "unknown"
+    }
+  }
+}

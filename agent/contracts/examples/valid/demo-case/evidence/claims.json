@@ -1,0 +1,172 @@
+{
+  "format_version": 1,
+  "records": [
+    {
+      "id": "CLM-0001",
+      "created_at": "2026-11-02T10:00:00+03:00",
+      "text": "Участник может взять не больше трёх книг за визит.",
+      "kind": "fact",
+      "status": "confirmed",
+      "supports": [
+        {
+          "source_id": "SRC-0001",
+          "locator": {
+            "kind": "section",
+            "heading": "Условия обмена",
+            "quote": "не больше трёх книг"
+          },
+          "note": "Правило названо в заметках"
+        }
+      ],
+      "contradicts": [
+        {
+          "source_id": "SRC-0004",
+          "locator": {
+            "kind": "section",
+            "heading": "Условия обмена"
+          },
+          "note": "В черновике названо пять книг",
+          "resolution": "Черновик отозван: условие в нём устарело."
+        }
+      ],
+      "derived_from": [],
+      "limits": null
+    },
+    {
+      "id": "CLM-0002",
+      "created_at": "2026-11-02T10:00:00+03:00",
+      "text": "Сейчас открыто четыре пункта обмена.",
+      "kind": "fact",
+      "status": "confirmed",
+      "supports": [
+        {
+          "source_id": "SRC-0001",
+          "locator": {
+            "kind": "section",
+            "heading": "Работа пунктов"
+          },
+          "note": "Число пунктов"
+        }
+      ],
+      "contradicts": [],
+      "derived_from": [],
+      "limits": null
+    },
+    {
+      "id": "CLM-0003",
+      "created_at": "2026-11-02T10:00:00+03:00",
+      "text": "В 2025 году заявок было от 100 до 140 в месяц.",
+      "kind": "fact",
+      "status": "confirmed",
+      "supports": [
+        {
+          "source_id": "SRC-0002",
+          "locator": {
+            "kind": "rows",
+            "from": 2,
+            "to": 13
+          },
+          "note": "Минимум и максимум по месяцам"
+        }
+      ],
+      "contradicts": [],
+      "derived_from": [],
+      "limits": "Только один год."
+    },
+    {
+      "id": "CLM-0004",
+      "created_at": "2026-11-02T10:00:00+03:00",
+      "text": "Платная подписка не снизит число заявок.",
+      "kind": "hypothesis",
+      "status": "unconfirmed",
+      "supports": [
+        {
+          "source_id": "SRC-0003",
+          "locator": {
+            "kind": "section",
+            "heading": "Тарифы"
+          },
+          "note": "Аналог берёт плату"
+        }
+      ],
+      "contradicts": [],
+      "derived_from": [],
+      "limits": "Аналог работает в другом городе."
+    },
+    {
+      "id": "CLM-0005",
+      "created_at": "2026-11-02T10:00:00+03:00",
+      "text": "Пункты работают ежедневно.",
+      "kind": "fact",
+      "status": "withdrawn",
+      "status_reason": "Не подтверждено: заметки называют только субботу.",
+      "supports": [],
+      "contradicts": [],
+      "derived_from": [],
+      "limits": null
+    },
+    {
+      "id": "CLM-0006",
+      "created_at": "2026-11-02T10:00:00+03:00",
+      "text": "На один пункт приходится около 30 заявок в месяц.",
+      "kind": "inference",
+      "status": "confirmed",
+      "supports": [],
+      "contradicts": [],
+      "derived_from": [
+        "CLM-0002",
+        "CALC-0001"
+      ],
+      "limits": "Предполагает равное распределение заявок между пунктами."
+    },
+    {
+      "id": "CLM-0007",
+      "created_at": "2026-11-02T10:00:00+03:00",
+      "text": "Аналогичный сервис берёт 150 условных единиц за подписку.",
+      "kind": "fact",
+      "status": "confirmed",
+      "supports": [
+        {
+          "source_id": "SRC-0003",
+          "locator": {
+            "kind": "section",
+            "heading": "Тарифы"
+          },
+          "note": "Цена подписки"
+        }
+      ],
+      "contradicts": [],
+      "derived_from": [],
+      "limits": null
+    },
+    {
+      "id": "CLM-0008",
+      "created_at": "2026-11-02T10:00:00+03:00",
+      "text": "Аренда одного пункта составляет 3000 условных единиц в месяц.",
+      "kind": "fact",
+      "status": "contested",
+      "supports": [
+        {
+          "source_id": "SRC-0001",
+          "locator": {
+            "kind": "section",
+            "heading": "Расходы"
+          },
+          "note": "Сумма аренды"
+        }
+      ],
+      "contradicts": [
+        {
+          "source_id": "SRC-0003",
+          "locator": {
+            "kind": "section",
+            "heading": "Тарифы"
+          },
+          "note": "На странице аналога указана иная сумма"
+        }
+      ],
+      "derived_from": [],
+      "limits": null
+    }
+  ]
+}

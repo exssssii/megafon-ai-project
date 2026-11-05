@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:strategy-agent:contracts:registry-claims",
+  "title": "evidence/claims.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format_version", "records"],
+  "properties": {
+    "format_version": {"$ref": "urn:strategy-agent:contracts:common#/$defs/format_version"},
+    "records": {"type": "array", "items": {"$ref": "#/$defs/record"}}
+  },
+  "$defs": {
+    "support": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_id", "locator", "note"],
+      "properties": {
+        "source_id": {"$ref": "urn:strategy-agent:contracts:common#/$defs/any_id"},
+        "locator": {"$ref": "urn:strategy-agent:contracts:common#/$defs/locator"},
+        "note": {"$ref": "urn:strategy-agent:contracts:common#/$defs/text"}
+      }
+    },
+    "contradiction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_id", "locator", "note"],
+      "properties": {
+        "source_id": {"$ref": "urn:strategy-agent:contracts:common#/$defs/any_id"},
+        "locator": {"$ref": "urn:strategy-agent:contracts:common#/$defs/locator"},
+        "note": {"$ref": "urn:strategy-agent:contracts:common#/$defs/text"},
+        "resolution": {"$ref": "urn:strategy-agent:contracts:common#/$defs/text"}
+      }
+    },
+    "record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "created_at", "text", "kind", "status", "supports",
+        "contradicts", "derived_from", "limits"
+      ],
+      "properties": {
+        "id": {"$ref": "urn:strategy-agent:contracts:common#/$defs/clm_id"},
+        "created_at": {"$ref": "urn:strategy-agent:contracts:common#/$defs/datetime"},
+        "text": {"$ref": "urn:strategy-agent:contracts:common#/$defs/text"},
+        "kind": {"enum": ["fact", "hypothesis", "forecast", "inference"]},
+        "status": {"enum": ["confirmed", "unconfirmed", "contested", "withdrawn"]},
+        "status_reason": {"type": "string"},
+        "supports": {"type": "array", "items": {"$ref": "#/$defs/support"}},
+        "contradicts": {"type": "array", "items": {"$ref": "#/$defs/contradiction"}},
+        "derived_from": {"$ref": "urn:strategy-agent:contracts:common#/$defs/id_list"},
+        "limits": {"$ref": "urn:strategy-agent:contracts:common#/$defs/nullable_text"}
+      }
+    }
+  }
+}

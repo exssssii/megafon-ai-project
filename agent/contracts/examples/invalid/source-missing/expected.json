@@ -1,0 +1,9 @@
+{
+  "errors": [
+    "SOURCE_MISSING"
+  ],
+  "warnings": [],
+  "delete": [
+    "sources/service-notes.md"
+  ]
+}

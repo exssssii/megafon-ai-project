@@ -1,0 +1,9 @@
+{
+  "errors": [
+    "CASE_INVALID"
+  ],
+  "warnings": [],
+  "delete": [
+    "case.json"
+  ]
+}

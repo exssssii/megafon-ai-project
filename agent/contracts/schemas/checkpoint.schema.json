@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:strategy-agent:contracts:checkpoint",
+  "title": "state/checkpoints/CKP-*.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format_version",
+    "id",
+    "case_id",
+    "created_at",
+    "seq",
+    "previous",
+    "goal",
+    "stage",
+    "artifacts",
+    "completed_actions",
+    "human_choices",
+    "open_items",
+    "next_step",
+    "totals"
+  ],
+  "properties": {
+    "format_version": {
+      "$ref": "urn:strategy-agent:contracts:common#/$defs/format_version"
+    },
+    "id": {
+      "$ref": "urn:strategy-agent:contracts:common#/$defs/ckp_id"
+    },
+    "case_id": {
+      "$ref": "urn:strategy-agent:contracts:common#/$defs/case_id"
+    },
+    "created_at": {
+      "$ref": "urn:strategy-agent:contracts:common#/$defs/datetime"
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "previous": {
+      "oneOf": [
+        {
+          "$ref": "urn:strategy-agent:contracts:common#/$defs/any_id"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "goal": {
+      "$ref": "urn:strategy-agent:contracts:common#/$defs/text"
+    },
+    "stage": {
+      "enum": [
+        "intake",
+        "research",
+        "options",
+        "decision",
+        "strategies",
+        "validation_plan",
+        "done"
+      ]
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "sha256"
+        ],
+        "properties": {
+          "path": {
+            "$ref": "urn:strategy-agent:contracts:common#/$defs/rel_path"
+          },
+          "sha256": {
+            "$ref": "urn:strategy-agent:contracts:common#/$defs/sha256"
+          }
+        }
+      }
+    },
+    "completed_actions": {
+      "$ref": "urn:strategy-agent:contracts:common#/$defs/id_list"
+    },
+    "human_choices": {
+      "$ref": "urn:strategy-agent:contracts:common#/$defs/id_list"
+    },
+    "open_items": {
+      "$ref": "urn:strategy-agent:contracts:common#/$defs/text_list"
+    },
+    "next_step": {
+      "$ref": "urn:strategy-agent:contracts:common#/$defs/nullable_text"
+    },
+    "totals": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "elapsed_seconds",
+        "time_to_first_result_seconds",
+        "human_active_seconds",
+        "cost"
+      ],
+      "properties": {
+        "elapsed_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "human_active_seconds": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "cost": {
+          "$ref": "urn:strategy-agent:contracts:common#/$defs/cost"
+        },
+        "time_to_first_result_seconds": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        }
+      }
+    }
+  }
+}

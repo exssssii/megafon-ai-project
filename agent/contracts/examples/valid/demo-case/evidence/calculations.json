@@ -1,0 +1,72 @@
+{
+  "format_version": 1,
+  "records": [
+    {
+      "id": "CALC-0001",
+      "created_at": "2026-11-02T10:00:00+03:00",
+      "record_status": "active",
+      "inputs": [
+        {
+          "name": "заявки за год",
+          "source_id": "SRC-0002",
+          "locator": {
+            "kind": "rows",
+            "from": 2,
+            "to": 13
+          },
+          "value": 1440,
+          "unit": "заявок",
+          "period": "2025-01..2025-12"
+        }
+      ],
+      "method": {
+        "kind": "formula",
+        "description": "Сумма за 12 месяцев, делённая на 12"
+      },
+      "result": {
+        "status": "computed",
+        "value": 120,
+        "unit": "заявок в месяц",
+        "period": "2025"
+      },
+      "gaps": [],
+      "assumptions": [
+        "Каждая строка таблицы — один календарный месяц"
+      ],
+      "reproduce": "1440 / 12"
+    },
+    {
+      "id": "CALC-0002",
+      "created_at": "2026-11-02T10:00:00+03:00",
+      "record_status": "active",
+      "inputs": [
+        {
+          "name": "аренда пункта",
+          "source_id": "SRC-0001",
+          "locator": {
+            "kind": "section",
+            "heading": "Расходы"
+          },
+          "value": 3000,
+          "unit": "условных единиц",
+          "period": "месяц"
+        }
+      ],
+      "method": {
+        "kind": "formula",
+        "description": "Доход пункта минус аренда"
+      },
+      "result": {
+        "status": "not_computable",
+        "value": null,
+        "unit": null,
+        "period": null
+      },
+      "gaps": [
+        "Нет данных о доходах пункта"
+      ],
+      "assumptions": [],
+      "reproduce": "доход - аренда; доход неизвестен"
+    }
+  ]
+}

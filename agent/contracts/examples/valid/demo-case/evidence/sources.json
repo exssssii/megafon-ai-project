@@ -1,0 +1,82 @@
+{
+  "format_version": 1,
+  "records": [
+    {
+      "id": "SRC-0001",
+      "created_at": "2026-11-02T10:00:00+03:00",
+      "record_status": "active",
+      "type": "md",
+      "title": "Заметки о сервисе",
+      "location": {
+        "path": "sources/service-notes.md"
+      },
+      "origin": "user_provided",
+      "allowed": true,
+      "retrieved_at": "2026-11-02T10:00:00+03:00",
+      "sha256": "ea97ba58cd383f330ff539bf4931e8cf1c7edfb7bdbc375ff45d7e8d620fa492",
+      "extraction": {
+        "status": "ok",
+        "complete": true,
+        "limits": "Прочитан целиком."
+      }
+    },
+    {
+      "id": "SRC-0002",
+      "created_at": "2026-11-02T10:00:00+03:00",
+      "record_status": "active",
+      "type": "csv",
+      "title": "Заявки по месяцам за 2025 год",
+      "location": {
+        "path": "sources/monthly-requests.csv"
+      },
+      "origin": "user_provided",
+      "allowed": true,
+      "retrieved_at": "2026-11-02T10:00:00+03:00",
+      "sha256": "0299ad2a5d0ae9fcf9ec77d02b62847bf7e2c6c0a89adf988638a76382644c94",
+      "extraction": {
+        "status": "ok",
+        "complete": true,
+        "limits": "Прочитан целиком."
+      }
+    },
+    {
+      "id": "SRC-0003",
+      "created_at": "2026-11-02T10:00:00+03:00",
+      "record_status": "active",
+      "type": "web",
+      "title": "Страница тарифов аналогичного сервиса",
+      "location": {
+        "url": "https://example.invalid/analog-pricing"
+      },
+      "origin": "public_web",
+      "allowed": true,
+      "retrieved_at": "2026-11-02T10:00:00+03:00",
+      "sha256": null,
+      "extraction": {
+        "status": "ok",
+        "complete": true,
+        "limits": "Прочитана одна страница."
+      }
+    },
+    {
+      "id": "SRC-0004",
+      "created_at": "2026-11-02T10:00:00+03:00",
+      "record_status": "withdrawn",
+      "status_reason": "Черновик заменён заметками о сервисе.",
+      "type": "md",
+      "title": "Черновик правил",
+      "location": {
+        "path": "sources/old-draft.md"
+      },
+      "origin": "user_provided",
+      "allowed": true,
+      "retrieved_at": "2026-11-02T10:00:00+03:00",
+      "sha256": "6279e5b4d39bea25676c3a318545539cc6ce5b1831613994410841e6832b73a8",
+      "extraction": {
+        "status": "ok",
+        "complete": true,
+        "limits": "Прочитан целиком."
+      }
+    }
+  ]
+}
