@@ -52,3 +52,9 @@ jobs:
         run: pwsh -NoProfile -File scripts/check.ps1
       - name: Test repository checks and push guard
         run: pwsh -NoProfile -File scripts/test-checks.ps1
+      - name: Test local tools
+        run: |
+          python -m pip install --quiet --disable-pip-version-check uv==0.13.5
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          python -m uv run --locked python -m unittest discover -s tests
+          if ($LASTEXITCODE -ne 0) { exit 1 }
