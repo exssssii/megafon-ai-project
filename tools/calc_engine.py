@@ -63,13 +63,18 @@ def numbers_in_text(text: str) -> list:
     A dash (U+2013) right before a number that does not follow another number may be a minus written
     as a dash: the sign cannot be read for sure, so this is a refusal, not a positive number.
     """
-    numbers = []
+    return [number for number, _ in number_matches(text)]
+
+
+def number_matches(text: str) -> list:
+    """Pairs (number, regex match) of running text, in order; refuses like numbers_in_text."""
+    found = []
     for match in TEXT_NUMBER.finditer(text):
         start = match.start()
         if not match[1] and start > 0 and text[start - 1] == "–" and not _digit_before(text, start - 1):
             raise CalcError("ambiguous_sign", "перед числом тире: неясно, минус это или нет; возьмите цитату без него")
-        numbers.append(_to_number(match[1], match[2]))
-    return numbers
+        found.append((_to_number(match[1], match[2]), match))
+    return found
 
 
 def _digit_before(text: str, index: int) -> bool:
