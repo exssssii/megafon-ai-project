@@ -54,6 +54,28 @@
             },
             "locator": {
               "$ref": "urn:strategy-agent:contracts:common#/$defs/locator"
+            },
+            "column": {
+              "oneOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                {
+                  "type": "string",
+                  "pattern": "^[A-Z]{1,3}$"
+                }
+              ]
+            },
+            "aggregate": {
+              "enum": [
+                "value",
+                "sum",
+                "mean",
+                "min",
+                "max",
+                "count"
+              ]
             }
           }
         },
@@ -193,6 +215,14 @@
             },
             "description": {
               "$ref": "urn:strategy-agent:contracts:common#/$defs/text"
+            },
+            "formula": {
+              "$ref": "urn:strategy-agent:contracts:common#/$defs/text"
+            },
+            "digits": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 10
             }
           }
         },

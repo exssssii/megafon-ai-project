@@ -700,6 +700,9 @@ def cascade(registry: dict, graph: "Graph", target: str, reason: str) -> tuple[l
         lost = lost_calculations(graph, target)
         affected = [r for r in claims if any(s["source_id"] == target for s in r["supports"])
                     or lost & set(r["derived_from"])]
+    elif target.startswith("CALC"):
+        lost = lost_calculations(graph, target) | {target}
+        affected = [r for r in claims if lost & set(r["derived_from"])]
     else:
         affected = [r for r in claims if target in r["derived_from"]]
     done = {r["id"] for r in affected}
@@ -725,23 +728,50 @@ def cascade(registry: dict, graph: "Graph", target: str, reason: str) -> tuple[l
     return sorted(downgraded), sorted(annotated)
 
 
+def find_calculation(calculations: dict, calc_id: str) -> dict:
+    for record in calculations["records"]:
+        if isinstance(record, dict) and record.get("id") == calc_id:
+            if not isinstance(record.get("record_status"), str):
+                raise Refused("реестр расчётов не соответствует контракту: запустите валидатор")
+            return record
+    raise Refused("расчёт не найден", id=calc_id)
+
+
+def withdrawn_copy(record: dict, reason: str) -> dict:
+    """The record marked withdrawn, with the reason right after the status."""
+    result = {}
+    for key, value in record.items():
+        if key == "status_reason":
+            continue
+        result[key] = "withdrawn" if key == "record_status" else value
+        if key == "record_status":
+            result["status_reason"] = reason
+    return result
+
+
 def cmd_withdraw(args, limits: dict) -> int:
     case = open_case(args.case)
     target, reason = args.id, args.reason.strip()
     if not reason:
         raise Refused("--reason не должен быть пустым")
-    if not re.fullmatch(r"(?:SRC|CLM)-[0-9]{4,}", target):
-        raise Refused("отзыв поддерживается для утверждений CLM-NNNN и источников SRC-NNNN")
+    if not re.fullmatch(r"(?:SRC|CLM|CALC)-[0-9]{4,}", target):
+        raise Refused("отзыв поддерживается для утверждений CLM-NNNN, расчётов CALC-NNNN и источников SRC-NNNN")
     registry = load_claims(case)
     graph = Graph(case, registry)
-    source = case.get(target) if target.startswith("SRC") else find_claim(registry, target)
-    status_key = "record_status" if target.startswith("SRC") else "status"
+    calculations = load_calculations(case) if target.startswith("CALC") else None
+    if target.startswith("SRC"):
+        source = case.get(target)
+    elif target.startswith("CALC"):
+        source = find_calculation(calculations, target)
+    else:
+        source = find_claim(registry, target)
+    status_key = "status" if target.startswith("CLM") else "record_status"
     already = source[status_key] == "withdrawn"
     reread = sorted(r["id"] for r in registry["records"]
                     if target.startswith("SRC") and r["status"] != "withdrawn"
                     and any(c["source_id"] == target for c in r["contradicts"]))
     before = baseline(case)
-    snapshot = Snapshot(case, (CLAIMS_FILE, SOURCES_FILE))
+    snapshot = Snapshot(case, (CLAIMS_FILE, SOURCES_FILE, CALCULATIONS_FILE))
     original = copy.deepcopy(registry)
     downgraded, annotated = cascade(registry, graph, target, reason)
     if not already and target.startswith("CLM"):
@@ -751,14 +781,12 @@ def cmd_withdraw(args, limits: dict) -> int:
     if registry != original:
         write_claims(case, registry)
     if not already and target.startswith("SRC"):
-        position = case.records.index(source)
-        record = {}
-        for key, value in source.items():
-            record[key] = "withdrawn" if key == "record_status" else value
-            if key == "record_status":
-                record["status_reason"] = reason
-        case.records[position] = record
+        case.records[case.records.index(source)] = withdrawn_copy(source, reason)
         write_sources(case)
+    if not already and target.startswith("CALC"):
+        records = calculations["records"]
+        records[records.index(source)] = withdrawn_copy(source, reason)
+        write_atomic(case.root / CALCULATIONS_FILE, dumps(calculations))
     touched = {target, *downgraded, *annotated}
     after = check_case(case, before, touched, snapshot)
     report = {"command": "withdraw", "id": target, "already": already, "downgraded": downgraded,
@@ -847,6 +875,7 @@ class Tracer:
                 continue
             if "source_id" in entry and isinstance(entry.get("locator"), dict):
                 extra = {key: entry.get(key) for key in ("name", "value", "unit", "period")}
+                extra |= {key: entry[key] for key in ("aggregate", "column") if key in entry}
                 self.reference("input", rid, {"source_id": entry["source_id"], "locator": entry["locator"]}, extra)
             elif isinstance(entry.get("calculation_id"), str):
                 children.append(entry["calculation_id"])

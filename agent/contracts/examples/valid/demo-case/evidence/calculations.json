@@ -7,21 +7,25 @@
       "record_status": "active",
       "inputs": [
         {
-          "name": "заявки за год",
+          "name": "заявки",
           "source_id": "SRC-0002",
           "locator": {
             "kind": "rows",
             "from": 2,
             "to": 13
           },
+          "column": 2,
+          "aggregate": "sum",
           "value": 1440,
           "unit": "заявок",
           "period": "2025-01..2025-12"
         }
       ],
       "method": {
-        "kind": "formula",
-        "description": "Сумма за 12 месяцев, делённая на 12"
+        "kind": "tool",
+        "description": "Среднее число заявок в месяц за 2025 год",
+        "formula": "заявки / 12",
+        "digits": 6
       },
       "result": {
         "status": "computed",
@@ -33,7 +37,7 @@
       "assumptions": [
         "Каждая строка таблицы — один календарный месяц"
       ],
-      "reproduce": "1440 / 12"
+      "reproduce": "tools/calc.py check projects/demo-case CALC-0001"
     },
     {
       "id": "CALC-0002",

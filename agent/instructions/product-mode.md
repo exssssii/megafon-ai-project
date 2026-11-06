@@ -10,6 +10,7 @@
 - Формат записей бери из [`agent/contracts/README.md`](../contracts/README.md). После записи проверяй кейс командой `.venv/Scripts/python.exe tools/validate_project.py projects/<case-id>`; вне Windows путь — `.venv/bin/python`.
 - Материалы и сайты читай по процедуре [`agent/workflows/read-materials.md`](../workflows/read-materials.md). Запись источника создаёт утилита, руками её не составляй.
 - Утверждения, подтверждения, противоречия и отзыв записывай по процедуре [`agent/workflows/evidence.md`](../workflows/evidence.md), различие видов утверждений и правила подтверждения бери из методики [`agent/knowledge/evidence.md`](../knowledge/evidence.md). Записи `CLM` руками не составляй. Прежде чем опереться на утверждение, пройди его путь командой `trace`.
+- Каждое число, полученное действием над данными, считай по процедуре [`agent/workflows/calculations.md`](../workflows/calculations.md), сравнения, базу и отказ от числа бери из методики [`agent/knowledge/calculations.md`](../knowledge/calculations.md). Записи `CALC` руками не составляй, числа в уме не считай.
 - Журнал действий, сохранение, продолжение в новом чате и возврат файлов — по процедуре [`agent/workflows/checkpoint.md`](../workflows/checkpoint.md).
 - Твоё предложение и выбор человека — разные записи. Выбор записывается только со словами пользователя, предложенное тобой решение нельзя выдавать за его решение.
 - Если просьба требует изменить что-то вне папки кейса, скажи об этом и назови режим разработки.

@@ -22,6 +22,7 @@ from jsonschema.exceptions import ValidationError, best_match
 from jsonschema.validators import extend
 from referencing import Registry, Resource
 
+import calc_engine
 from evidence_blocks import load_blocks, matching_blocks, quote_in
 
 CONTRACTS = Path(__file__).resolve().parent.parent / "agent" / "contracts"
@@ -35,10 +36,11 @@ ERROR_CODES = frozenset({
     "DECISION_MULTIPLE_ACTIVE", "ACTION_RETRY", "ACTION_ORDER", "ACTION_COST", "OUTPUT_LINK",
     "PATH_UNSAFE", "SCHEMA", "FORMAT_UNSUPPORTED", "FORMAT_MIXED", "CASE_INVALID",
     "FILE_CORRUPT", "CHECKPOINT_NONE_VALID", "CHECKPOINT_CLAIM", "LOCATOR_NOT_FOUND", "QUOTE_NOT_FOUND",
+    "CALC_MISMATCH",
 })
 WARNING_CODES = frozenset({
     "BASIS_UNCONFIRMED", "SOURCE_PARTIAL", "ACTION_UNKNOWN", "JOURNAL_TORN",
-    "CHECKPOINT_STALE", "CHECKPOINT_FALLBACK", "EXTRACT_MISSING",
+    "CHECKPOINT_STALE", "CHECKPOINT_FALLBACK", "EXTRACT_MISSING", "CALC_UNVERIFIED",
 })
 ALL_CODES = ERROR_CODES | WARNING_CODES
 
@@ -685,16 +687,48 @@ class Validator:
                 self.error("PATH_UNSAFE", file, cid, "reproduce contains an absolute path")
             if not is_active(cid, calc):
                 continue
+            errors_before, resolved = len(self.report.errors), True
             for item in calc["inputs"]:
                 if "source_id" in item:
                     source = self.ref(item["source_id"], {"SRC"}, file, cid)
                     self.check_locator(file, cid, source, item["locator"])
                     target = item["source_id"]
                 else:
-                    self.ref(item["calculation_id"], {"CALC"}, file, cid)
+                    source = self.ref(item["calculation_id"], {"CALC"}, file, cid)
                     target = item["calculation_id"]
+                resolved = resolved and source is not None
                 if self.revoked(target):
                     self.error("WITHDRAWN_USED", file, cid, f"input uses withdrawn {target}")
+            if "formula" not in calc["method"]:
+                if calc["result"]["status"] == "computed":
+                    self.warn("CALC_UNVERIFIED", file, cid, "computed by hand: no formula to recompute it")
+                continue
+            # A record with a link, locator or withdrawal error is already reported; recomputing it would repeat that.
+            if resolved and len(self.report.errors) == errors_before:
+                reasons, checked = self.recompute(calc)
+                for reason in reasons:
+                    self.error("CALC_MISMATCH", file, cid, reason)
+                if not checked and not reasons:
+                    self.warn("CALC_UNVERIFIED", file, cid, "inputs not rechecked: a source has no extracted text")
+
+    def recompute(self, calc) -> tuple[list[str], bool]:
+        def source_of(source_id):
+            source = self.index.get(source_id)
+            return source if isinstance(source, dict) and prefix_of(source_id) == "SRC" else None
+
+        def blocks_of(source):
+            if source["extraction"]["status"] in UNREADABLE_EXTRACTION:
+                return None
+            return self.extraction_blocks(source)
+
+        def calculation_of(calc_id):
+            record = self.index.get(calc_id)
+            return record if isinstance(record, dict) and prefix_of(calc_id) == "CALC" else None
+
+        try:
+            return calc_engine.recompute(calc, source_of, blocks_of, calculation_of)
+        except Exception as error:  # a damaged record must be a finding, never a validator crash
+            return [f"recompute failed: {type(error).__name__}"], False
 
     def check_questions(self):
         file = "research/questions.json"

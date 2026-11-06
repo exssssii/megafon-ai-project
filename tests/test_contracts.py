@@ -764,9 +764,10 @@ class BranchCoverage(Mutating):
             def add(data):
                 data["records"].append({
                     "id": "CALC-0003", "created_at": "2026-11-02T10:00:00+03:00", "record_status": "active",
-                    "inputs": [{"name": "n", "calculation_id": "CALC-0001", "value": 1, "unit": None, "period": None}],
-                    "method": {"kind": "formula", "description": "d"},
-                    "result": {"status": "computed", "value": 1, "unit": None, "period": None},
+                    "inputs": [{"name": "n", "calculation_id": "CALC-0001", "value": 120, "unit": "заявок в месяц",
+                                "period": "2025"}],
+                    "method": {"kind": "tool", "description": "d", "formula": "n", "digits": 6},
+                    "result": {"status": "computed", "value": 120, "unit": None, "period": None},
                     "gaps": [], "assumptions": [], "reproduce": "1"})
 
             self.edit(CALCS, add)

@@ -588,7 +588,7 @@ class Withdrawal(unittest.TestCase):
         calls = [
             ("withdraw", self.case, "CLM-0099", "--reason", "x"),
             ("withdraw", self.case, "SRC-0099", "--reason", "x"),
-            ("withdraw", self.case, "CALC-0001", "--reason", "x"),
+            ("withdraw", self.case, "CALC-0099", "--reason", "x"),
             ("withdraw", self.case, "OPT-0001", "--reason", "x"),
             ("withdraw", self.case, "ACT-0001", "--reason", "x"),
             ("withdraw", self.case, "abc", "--reason", "x"),
