@@ -54,9 +54,7 @@
         "action_id"
       ],
       "properties": {
-        "option_id": {
-          "$ref": "urn:strategy-agent:contracts:common#/$defs/any_id"
-        },
+        "option_id": {"oneOf": [{"$ref": "urn:strategy-agent:contracts:common#/$defs/any_id"}, {"type": "null"}]},
         "user_statement": {
           "$ref": "urn:strategy-agent:contracts:common#/$defs/text"
         },

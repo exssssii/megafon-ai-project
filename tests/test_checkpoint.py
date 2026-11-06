@@ -129,6 +129,27 @@ class EmptyCaseTestCase(unittest.TestCase):
         return run("action", "end", self.case, "--id", action_id, "--outcome", outcome, *extra)
 
 
+class BriefApproval(EmptyCaseTestCase):
+    def test_brief_approval_survives_resume(self):
+        code, action = run("action", "human", self.case, "--tool", "chat", "--environment", "claude_code",
+                           "--result-ref", "DEC-0001")
+        self.assertEqual(code, 0)
+        write_json(self.case / "decisions" / "decisions.json", {"format_version": 1, "records": [{
+            "id": "DEC-0001", "created_at": "2026-11-06T10:00:00+03:00", "topic": "brief", "status": "chosen",
+            "proposal": None,
+            "choice": {"option_id": None, "user_statement": "Да, всё верно", "chosen_at": "2026-11-06T10:00:00+03:00",
+                       "action_id": action["id"]}}]})
+        request = self.tmp / "save.json"
+        write_json(request, {"goal": "Понять причину оттока", "stage": "research", "open_items": [],
+                             "next_step": "Собрать данные"})
+        code, _ = run("save", self.case, "--from", request)
+        self.assertEqual(code, 0)
+        code, result = run("resume", self.case)
+        self.assertEqual((code, result["stage"]), (0, "research"))
+        self.assertEqual(result["human_choices"],
+                         [{"id": "DEC-0001", "topic": "brief", "user_statement": "Да, всё верно"}])
+
+
 class ActionJournal(EmptyCaseTestCase):
     def test_start_and_end_write_valid_lines(self):
         code, result = self.start("--input-ref", "SRC-0001")

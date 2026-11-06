@@ -307,6 +307,25 @@ class MalformedCases(CaseTestCase):
             text = (ROOT / target).read_text(encoding="utf-8")
             self.assertNotRegex(text, r"git (add|commit|push|switch|checkout|merge|rebase)")
 
+    def test_entry_files(self):
+        new_files = ("START.md", "agent/workflows/intake.md", "agent/workflows/run-case.md",
+                     "agent/knowledge/problem-framing.md")
+        for name in new_files:
+            path = ROOT / name
+            self.assertTrue(path.is_file(), name)
+            for target in re.findall(r"\]\((?!https?:)([^)#]+)", path.read_text(encoding="utf-8")):
+                self.assertTrue((path.parent / target).exists(), f"{name}: {target}")
+        start = (ROOT / "START.md").read_text(encoding="utf-8")
+        self.assertNotIn("docs/", start)
+        flow = (ROOT / "agent/workflows/run-case.md").read_text(encoding="utf-8")
+        for stage in ("intake", "research", "options", "decision", "strategies", "validation_plan", "done"):
+            self.assertIn(f"`{stage}`", flow)
+        product = (ROOT / "agent/instructions/product-mode.md").read_text(encoding="utf-8")
+        self.assertIn("workflows/intake.md", product)
+        self.assertIn("workflows/run-case.md", product)
+        for name in ("AGENTS.md", "agent/contracts/modes.md", "agent/instructions/product-mode.md"):
+            self.assertIn("итогов", (ROOT / name).read_text(encoding="utf-8"), name)
+
     def test_cycle_in_supersedes_is_decision_supersede(self):
         def change(data):
             first, second = data["records"][0], data["records"][1]
@@ -515,6 +534,31 @@ class Robustness(Mutating):
                 self.edit(DECISIONS, mutate)
                 self.expect(["ID_WRONG_TYPE"])
                 self.assertEqual(self.cli(self.case).returncode, 1)
+
+    def test_brief_choice_without_option_is_valid(self):
+        def mutate(d):
+            for record in d["records"]:
+                record["topic"] = "brief"
+            d["records"][1]["choice"]["option_id"] = None
+
+        self.edit(DECISIONS, mutate)
+        self.assertEqual(codes(self.run_case())[0], [])
+
+    def test_direction_choice_without_option_is_error(self):
+        def mutate(d):
+            d["records"][1]["choice"]["option_id"] = None
+
+        self.edit(DECISIONS, mutate)
+        self.assertEqual(codes(self.run_case())[0], ["DECISION_CHOICE_STATE"])
+
+    def test_proposal_option_stays_required(self):
+        def mutate(d):
+            for record in d["records"]:
+                record["topic"] = "brief"
+            d["records"][1]["proposal"]["option_id"] = None
+
+        self.edit(DECISIONS, mutate)
+        self.assertIn("SCHEMA", codes(self.run_case())[0])
 
     def test_duplicate_id_after_a_record_that_failed_its_schema(self):
         def change(data):

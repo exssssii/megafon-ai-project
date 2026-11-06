@@ -798,9 +798,11 @@ class Validator:
             self.error("DECISION_CHOICE_STATE", file, did, "proposed with a choice")
         if decision["status"] == "proposed" and proposal is None:
             self.error("DECISION_CHOICE_STATE", file, did, "proposed without a proposal")
+        if choice is not None and choice["option_id"] is None and decision["topic"] == "direction":
+            self.error("DECISION_CHOICE_STATE", file, did, "a direction choice names no option")
         weak = []
         for part in (proposal, choice):
-            if part is None:
+            if part is None or part["option_id"] is None:
                 continue
             option = self.ref(part["option_id"], {"OPT"}, file, did)
             if option is None:

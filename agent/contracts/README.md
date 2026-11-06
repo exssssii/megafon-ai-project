@@ -191,7 +191,8 @@
 ```
 
 - `status`: `proposed` (есть только `proposal`), `chosen` (есть `choice`), `superseded` (заменено). Нарушение — `DECISION_CHOICE_STATE`.
-- `proposal` равно `null`, если пользователь сам назвал направление без предложения агента: такая запись сразу `chosen`. Необязательные `supersedes` и `change_reason` без значения не пишутся.
+- `proposal` равно `null`, если решение принял сам пользователь без предложения агента: такая запись сразу `chosen`. Необязательные `supersedes` и `change_reason` без значения не пишутся.
+- `choice.option_id` равно `null`, если выбор не относится к варианту: `topic: brief` — утверждение брифа, `topic: budget` — расширение бюджета исследования. Для `topic: direction` это ошибка `DECISION_CHOICE_STATE`. `proposal.option_id` всегда ссылается на вариант.
 - Предложение модели и выбор человека разделены. `proposal.action_id` — действие `model`; `choice.action_id` — завершённое действие `human_input`, в `result_refs` конца которого есть это решение. Иначе `DECISION_NOT_HUMAN`. Выбор может отличаться от предложения.
 - `proposed` становится `chosen` на месте: добавляется `choice`. Если меняется предложение или уже сделанный выбор, создаётся новая запись с `supersedes` и `change_reason`, прежняя получает `superseded` (`DECISION_SUPERSEDE`). Замены не образуют цикл.
 - `topic` — короткий идентификатор предмета решения: строчные латинские буквы, цифры и `_`, начинается с буквы (`direction` в обязательном сценарии). Замена не меняет `topic`; одну запись заменяет не больше одной (ветвление — `DECISION_SUPERSEDE`). На один `topic` приходится ровно одна незаменённая запись, считая `proposed` (`DECISION_MULTIPLE_ACTIVE`).
@@ -266,7 +267,7 @@
 | `LOCATOR_NOT_FOUND` | у источника есть извлечённый текст, но локатор не указывает ни на один блок |
 | `QUOTE_NOT_FOUND` | `quote` нет в тексте блоков, на которые указывает локатор |
 | `WITHDRAWN_USED` | активная запись или текст `outputs/**/*.md` ссылается на отозванную |
-| `DECISION_CHOICE_STATE` | `chosen` без `choice` либо `proposed` с `choice` |
+| `DECISION_CHOICE_STATE` | `chosen` без `choice`, `proposed` с `choice` либо выбор направления без варианта |
 | `DECISION_NOT_HUMAN` | выбор не опирается на завершённое `human_input` либо предложение не на `model` |
 | `DECISION_SUPERSEDE` | замена без причины, заменённое не `superseded`, `superseded` без замены, цикл, ветвление, смена `topic` |
 | `DECISION_MULTIPLE_ACTIVE` | больше одной незаменённой записи на `topic` |
