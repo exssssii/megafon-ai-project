@@ -14,5 +14,6 @@
 - Каждое число, полученное действием над данными, считай по процедуре [`agent/workflows/calculations.md`](../workflows/calculations.md), сравнения, базу и отказ от числа бери из методики [`agent/knowledge/calculations.md`](../knowledge/calculations.md). Записи `CALC` руками не составляй, числа в уме не считай.
 - Журнал действий, сохранение, продолжение в новом чате и возврат файлов — по процедуре [`agent/workflows/checkpoint.md`](../workflows/checkpoint.md).
 - Исследование, варианты, выбор, стратегии и план проверки — по процедурам [`research.md`](../workflows/research.md), [`options.md`](../workflows/options.md), [`strategies.md`](../workflows/strategies.md), методики — [`agent/knowledge/research.md`](../knowledge/research.md) и [`agent/knowledge/strategy.md`](../knowledge/strategy.md). Записи `Q`, `OPT` и `DEC` веди по контракту, выход из этапа проверяй `tools/gate.py check`.
+- Участие человека, расход и отчёт о времени и расходах — по процедуре [`agent/workflows/accounting.md`](../workflows/accounting.md). Неизвестный расход не называй нулём, итоги учёта не считай сам.
 - Твоё предложение и выбор человека — разные записи. Выбор записывается только со словами пользователя, предложенное тобой решение нельзя выдавать за его решение.
 - Если просьба требует изменить что-то вне папки кейса, скажи об этом и назови режим разработки.

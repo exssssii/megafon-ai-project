@@ -174,6 +174,7 @@ class Base(unittest.TestCase):
         self.write("outputs/product-strategy.md", PRODUCT_MD)
         self.write("outputs/communication-strategy.md", COMMUNICATION_MD)
         self.write("outputs/validation-plan.md", PLAN_MD)
+        self.write("outputs/accounting.md", "# Учёт работы\n")
         self.change("Q", self.partial_question)
         self.add_thresholds()
 
@@ -211,6 +212,21 @@ class Base(unittest.TestCase):
             "id": "DEC-0003", "created_at": at, "topic": "thresholds", "status": "chosen", "proposal": None,
             "choice": {"option_id": None, "user_statement": "Пороги подходят", "chosen_at": at,
                        "action_id": "ACT-0100"}}))
+
+    @staticmethod
+    def not_a_choice(line):
+        """A human action left without a decision is no longer a choice, or the journal is invalid."""
+        if "human" in line and not line["result_refs"]:
+            line["human"]["help"] = "answer"
+
+    def drop_threshold_link(self):
+        journal = self.case / "state" / "actions.jsonl"
+        lines = [json.loads(line) for line in journal.read_text(encoding="utf-8").splitlines()]
+        for line in lines:
+            if line.get("result_refs") == ["DEC-0003"]:
+                line["result_refs"] = []
+                self.not_a_choice(line)
+        journal.write_text("".join(json.dumps(line, ensure_ascii=False) + "\n" for line in lines), encoding="utf-8")
 
     def check(self, stage="done", *flags):
         raw = io.BytesIO()
@@ -343,6 +359,7 @@ class Options(Base):
             for name in ("result_refs", "input_refs"):
                 if name in line:
                     line[name] = [ref for ref in line[name] if not ref.startswith("DEC")]
+            self.not_a_choice(line)
         journal.write_text("".join(json.dumps(line, ensure_ascii=False) + "\n" for line in lines), encoding="utf-8")
         self.assertEqual(self.codes("options"), {"PROPOSAL_MISSING"})
 
@@ -520,14 +537,19 @@ class Numbers(Base):
 
 
 class Done(Base):
+    def test_accounting_report_is_required(self):
+        (self.case / "outputs/accounting.md").unlink()
+        self.assertEqual(self.codes(), {"ACCOUNTING_MISSING"})
+        self.assertEqual(self.codes("validation_plan"), set())
+
     def test_thresholds_are_required(self):
-        self.replace("state/actions.jsonl", '"result_refs": ["DEC-0003"]', '"result_refs": []')
+        self.drop_threshold_link()
         self.change("DEC", lambda records: records.pop())
         self.assertEqual(self.codes("validation_plan"), set())
         self.assertEqual(self.codes(), {"THRESHOLDS_PENDING"})
 
     def test_thresholds_without_a_person(self):
-        self.replace("state/actions.jsonl", '"result_refs": ["DEC-0003"]', '"result_refs": []')
+        self.drop_threshold_link()
         _, report = self.check()
         self.assertIn("DECISION_NOT_HUMAN", report["problems"][0]["note"])
 

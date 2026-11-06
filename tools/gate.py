@@ -23,6 +23,7 @@ from checkpoint import Parser, Refused, UsageError
 from validate_project import BRACKET_RE, ID_RE, Validator, is_active, prefix_of
 
 EXIT_OK, EXIT_PROBLEMS, EXIT_REFUSED, EXIT_INTERNAL = 0, 1, 4, 5
+ACCOUNTING_REPORT = "outputs/accounting.md"
 STAGES = ("research", "options", "decision", "strategies", "validation_plan", "done")
 PRELIMINARY_STAGES = ("strategies", "validation_plan")
 ASSUMPTION = "(допущение)"
@@ -370,6 +371,8 @@ class Gate:
 
     def check_done(self):
         result = self.result
+        if not (self.root / ACCOUNTING_REPORT).is_file():
+            result.problem("ACCOUNTING_MISSING", ACCOUNTING_REPORT, None, "no accounting report")
         thresholds = self.active_decision("thresholds")
         if thresholds is None or thresholds["status"] != "chosen":
             result.problem("THRESHOLDS_PENDING", DECISION_REGISTRY, None, "the person has not agreed the thresholds")

@@ -43,6 +43,8 @@ EXIT_OK, EXIT_REFUSED, EXIT_USAGE, EXIT_INTERNAL = 0, 1, 2, 3
 KINDS = ["model", "search", "web_read", "file_read", "compute", "save", "human_input"]
 ENVIRONMENTS = ["claude_code", "codex"]
 OUTCOMES = ["completed", "failed", "unknown"]
+HELP_KINDS = ["choice", "answer", "material", "workaround"]
+MAX_ACTIVE_MINUTES = 60 * 24 * 365
 TORN_ID_RE = re.compile(rb'"id"\s*:\s*"ACT-([0-9]{4,})"')
 DECISION_ID_RE = re.compile(r"DEC-[0-9]{4,}")
 CKP_NUMBER_RE = re.compile(r"CKP-([0-9]{4,})")
@@ -103,6 +105,14 @@ def case_version(root: Path) -> int:
         raise Refused("unsupported_version", "версия формата кейса не поддерживается этим агентом",
                       case_version=version, supported=sorted(SUPPORTED_VERSIONS))
     return version
+
+
+def case_created_at(root: Path):
+    try:
+        document = parse_json((root / "case.json").read_bytes())
+    except (OSError, ValueError):
+        return None
+    return document.get("created_at") if isinstance(document, dict) else None
 
 
 # --- journal ---------------------------------------------------------------
@@ -361,16 +371,39 @@ def cmd_action_end(args) -> int:
     return EXIT_OK
 
 
+def human_help(args, refs: list[str]) -> dict:
+    """The human object of a human_input end line; refuses what the contract would reject."""
+    note = args.note.strip() if args.note else None
+    if args.help_kind == "choice" and (not refs or not all(DECISION_ID_RE.fullmatch(ref) for ref in refs)):
+        raise Refused("human_result_invalid", "для выбора нужен хотя бы один --result-ref вида DEC-NNNN")
+    if args.help_kind == "workaround" and not note:
+        raise Refused("human_note_missing", "для обхода поломки нужен --note: что сделал человек")
+    if args.active_minutes is not None and not (0 <= args.active_minutes <= MAX_ACTIVE_MINUTES):
+        raise Refused("human_time_invalid", "--active-minutes должен быть неотрицательным числом")
+    if args.covers_case and args.active_minutes is None:
+        raise Refused("human_total_invalid", "--covers-case требует --active-minutes")
+    human = {"help": args.help_kind}
+    if note:
+        human["note"] = note
+    if args.active_minutes is not None:
+        human["reported_active_seconds"] = round(args.active_minutes * 60)
+    if args.covers_case:
+        human["covers_case"] = True
+    return human
+
+
 def cmd_action_human(args) -> int:
     root = open_case(args.case)
     version = case_version(root)
-    read_journal(root)
+    lines = read_journal(root)
     refs = unique(args.result_ref)
-    if not refs or not all(DECISION_ID_RE.fullmatch(ref) for ref in refs):
-        raise Refused("human_result_invalid", "для human_input нужен хотя бы один --result-ref вида DEC-NNNN")
+    human = human_help(args, refs)
+    if args.help_kind != "choice":
+        check_references(root, lines, refs)
     action_id = next_id(root)
-    pair = [start_line(version, action_id, args, "human_input", []),
-            end_line(version, action_id, "completed", refs, {"basis": "unknown"})]
+    end = end_line(version, action_id, "completed", refs, {"basis": "unknown"})
+    end["human"] = human
+    pair = [start_line(version, action_id, args, "human_input", []), end]
     check_lines(pair)
     append_lines(root, pair)
     emit({"status": "done", "id": action_id})
@@ -463,14 +496,10 @@ def parse_time(value) -> datetime | None:
         return None
 
 
-def compute_totals(lines: list[dict]) -> dict:
-    """Totals of a checkpoint. Minimal until the accounting task replaces this function."""
-    stamps = [(line.get("phase"), parse_time(line.get("at"))) for line in lines if isinstance(line, dict)]
-    first = next((at for phase, at in stamps if phase == "start" and at), None)
-    last = next((at for _, at in reversed(stamps) if at), None)
-    elapsed = max(0, int((last - first).total_seconds())) if first and last else 0
-    return {"elapsed_seconds": elapsed, "time_to_first_result_seconds": None,
-            "human_active_seconds": None, "cost": {"basis": "unknown"}}
+def compute_totals(lines: list[dict], options: list[dict] | None = None, created_at=None) -> dict:
+    """Totals of a checkpoint, derived by the accounting module from the journal and the options."""
+    from accounting import totals
+    return totals(lines, options or [], created_at)
 
 
 def next_checkpoint_number(root: Path) -> int:
@@ -653,7 +682,8 @@ def save(root: Path, request: dict, acknowledge_loss: bool) -> dict:
         "human_choices": chosen_decisions(root),
         "open_items": open_items,
         "next_step": request["next_step"],
-        "totals": compute_totals(read_journal(root)),
+        "totals": compute_totals(read_journal(root), read_records(root, "decisions/options.json"),
+                                 case_created_at(root)),
     }
     notes = schema_notes(schemas()["checkpoint"], document)
     if notes:
@@ -1001,6 +1031,10 @@ def build_parser() -> Parser:
     human.add_argument("--environment", required=True, choices=ENVIRONMENTS)
     human.add_argument("--model")
     human.add_argument("--result-ref", action="append")
+    human.add_argument("--help-kind", choices=HELP_KINDS, default="choice")
+    human.add_argument("--note")
+    human.add_argument("--active-minutes", type=float)
+    human.add_argument("--covers-case", action="store_true")
     human.set_defaults(run=cmd_action_human)
 
     save_command = commands.add_parser("save")

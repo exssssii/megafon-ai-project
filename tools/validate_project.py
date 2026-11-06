@@ -10,10 +10,11 @@ or personal data. The contract is described in agent/contracts/README.md.
 import argparse
 import hashlib
 import json
+import math
 import re
 import sys
 from dataclasses import asdict, dataclass, field
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -33,7 +34,7 @@ ERROR_CODES = frozenset({
     "SOURCE_CHANGED", "CLAIM_WEAK_SOURCE", "CLAIM_WEAK_DERIVATION", "CLAIM_CONFLICT_HIDDEN",
     "CLAIM_NOT_CONTESTED", "FACT_NOT_CONFIRMABLE", "STATUS_NO_REASON", "LOCATOR_MISMATCH",
     "WITHDRAWN_USED", "DECISION_CHOICE_STATE", "DECISION_NOT_HUMAN", "DECISION_SUPERSEDE",
-    "DECISION_MULTIPLE_ACTIVE", "ACTION_RETRY", "ACTION_ORDER", "ACTION_COST", "OUTPUT_LINK",
+    "DECISION_MULTIPLE_ACTIVE", "ACTION_RETRY", "ACTION_ORDER", "ACTION_COST", "ACTION_HUMAN", "OUTPUT_LINK",
     "PATH_UNSAFE", "SCHEMA", "FORMAT_UNSUPPORTED", "FORMAT_MIXED", "CASE_INVALID",
     "FILE_CORRUPT", "CHECKPOINT_NONE_VALID", "CHECKPOINT_CLAIM", "LOCATOR_NOT_FOUND", "QUOTE_NOT_FOUND",
     "CALC_MISMATCH",
@@ -248,12 +249,35 @@ def blank(value) -> bool:
     return not isinstance(value, str) or not value.strip()
 
 
+TARIFF_DATE_RE = re.compile(r"(?<![0-9])[0-9]{4}-[0-9]{2}-[0-9]{2}(?![0-9])")
+
+
+def names_tariff_date(text: str) -> bool:
+    for found in TARIFF_DATE_RE.findall(text):
+        try:
+            date.fromisoformat(found)
+            return True
+        except ValueError:
+            continue
+    return False
+
+
+def finite(value) -> bool:
+    return not isinstance(value, float) or math.isfinite(value)
+
+
 def cost_problem(cost) -> str | None:
     amounts = cost.get("amounts")
+    for value in (amounts or {}).values():
+        if not all(finite(part) for part in (value.values() if isinstance(value, dict) else [value])):
+            return "an amount is not a finite number"
     if cost["basis"] == "unknown" and amounts is not None:
         return "amounts present although cost is unknown"
     if cost["basis"] == "estimated" and blank(cost.get("estimate_source")):
         return "estimated cost without estimate_source"
+    if (cost["basis"] == "estimated" and (amounts or {}).get("money_usd") is not None
+            and not names_tariff_date(cost.get("estimate_source") or "")):
+        return "money estimate without the tariff date in estimate_source"
     for value in (amounts or {}).values():
         if isinstance(value, dict):
             if cost["basis"] != "estimated":
@@ -828,7 +852,8 @@ class Validator:
     def is_human_input_for(self, action, decision_id):
         end = action["end"]
         return (self.action_kind(action) == "human_input" and end is not None
-                and end["outcome"] == "completed" and decision_id in end["result_refs"])
+                and end["outcome"] == "completed" and decision_id in end["result_refs"]
+                and end.get("human", {}).get("help", "choice") == "choice")
 
     def check_supersede_chains(self, file, decisions):
         by_id = {d["id"]: d for d in decisions}
@@ -877,10 +902,27 @@ class Validator:
                 problem = cost_problem(line["cost"])
                 if problem:
                     self.error("ACTION_COST", JOURNAL, rid, problem)
+                if "human" in line:
+                    self.check_human(rid, line)
         for rid, entry in self.index.items():
             if prefix_of(rid) == "ACT" and entry["start"] is not None:
                 if entry["end"] is None or entry["end"]["outcome"] == "unknown":
                     self.warn("ACTION_UNKNOWN", JOURNAL, rid, "outcome is unknown: check before repeating")
+
+    def check_human(self, rid, line):
+        entry = self.index.get(rid)
+        start = entry.get("start") if isinstance(entry, dict) else None
+        human = line["human"]
+        if start is None or start["kind"] != "human_input":
+            self.error("ACTION_HUMAN", JOURNAL, rid, "human help is recorded on an action that is not human_input")
+        elif human["help"] == "choice" and not any(prefix_of(ref) == "DEC" for ref in line["result_refs"]):
+            self.error("ACTION_HUMAN", JOURNAL, rid, "a choice without a decision in result_refs")
+        elif human["help"] == "workaround" and blank(human.get("note")):
+            self.error("ACTION_HUMAN", JOURNAL, rid, "a workaround without a note")
+        elif not finite(human.get("reported_active_seconds")):
+            self.error("ACTION_HUMAN", JOURNAL, rid, "reported time is not a finite number")
+        elif human.get("covers_case") and "reported_active_seconds" not in human:
+            self.error("ACTION_HUMAN", JOURNAL, rid, "a total for the case without the time")
 
     def check_retry(self, rid, line):
         if "retry_of" in line:

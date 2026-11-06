@@ -160,6 +160,35 @@
         },
         "at": {
           "$ref": "urn:strategy-agent:contracts:common#/$defs/datetime"
+        },
+        "human": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "help"
+          ],
+          "properties": {
+            "help": {
+              "enum": [
+                "choice",
+                "answer",
+                "material",
+                "workaround"
+              ]
+            },
+            "note": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 300
+            },
+            "reported_active_seconds": {
+              "type": "number",
+              "minimum": 0
+            },
+            "covers_case": {
+              "const": true
+            }
+          }
         }
       }
     }
