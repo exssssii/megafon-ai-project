@@ -145,6 +145,8 @@ PLAN_MD = f"""# План проверки
 
 Не ниже 110 (допущение).
 
+Пороги согласованы [DEC-0003].
+
 ## Нежелательные последствия
 
 Очереди в пунктах.
@@ -545,6 +547,7 @@ class Done(Base):
     def test_thresholds_are_required(self):
         self.drop_threshold_link()
         self.change("DEC", lambda records: records.pop())
+        self.replace("outputs/validation-plan.md", "Пороги согласованы [DEC-0003].", "Пороги согласованы.")
         self.assertEqual(self.codes("validation_plan"), set())
         self.assertEqual(self.codes(), {"THRESHOLDS_PENDING"})
 
@@ -552,6 +555,26 @@ class Done(Base):
         self.drop_threshold_link()
         _, report = self.check()
         self.assertIn("DECISION_NOT_HUMAN", report["problems"][0]["note"])
+
+    def test_plan_must_cite_the_thresholds(self):
+        self.replace("outputs/validation-plan.md", "Пороги согласованы [DEC-0003].", "Пороги согласованы.")
+        _, report = self.check()
+        self.assertEqual([(p["code"], p["file"], p["id"]) for p in report["problems"]],
+                         [("THRESHOLDS_NOT_CITED", "outputs/validation-plan.md", "DEC-0003")])
+        self.assertEqual(self.codes("validation_plan"), set())
+
+    def test_replaced_thresholds_need_a_new_citation(self):
+        def replace(records):
+            old = records[2]
+            records.append({**old, "id": "DEC-0004", "supersedes": "DEC-0003", "change_reason": "новые пороги"})
+            old["status"] = "superseded"
+        self.change("DEC", replace)
+        self.replace("state/actions.jsonl", '"result_refs": ["DEC-0003"]', '"result_refs": ["DEC-0003", "DEC-0004"]')
+        self.assertEqual(self.codes(), {"CASE_INVALID"})
+        self.replace("outputs/validation-plan.md", "[DEC-0003]", "")
+        self.assertEqual(self.codes(), {"THRESHOLDS_NOT_CITED"})
+        self.replace("outputs/validation-plan.md", "согласованы .", "согласованы [DEC-0004].")
+        self.assertEqual(self.codes(), set())
 
     def test_unfinished_action(self):
         journal = self.case / "state/actions.jsonl"

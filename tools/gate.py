@@ -379,9 +379,16 @@ class Gate:
         elif self.is_before_direction(thresholds):
             result.problem("THRESHOLDS_PENDING", DECISION_REGISTRY, thresholds["id"],
                            "the thresholds were agreed before the current choice of direction")
+        elif not self.cited(PLAN, thresholds["id"]):
+            result.problem("THRESHOLDS_NOT_CITED", PLAN, thresholds["id"],
+                           "the validation plan does not cite the current thresholds decision")
         for record_id, record in self.index.items():
             if prefix_of(record_id) == "ACT" and isinstance(record, dict) and record.get("end") is None:
                 result.problem("ACTIONS_OPEN", "state/actions.jsonl", record_id, "started and not finished")
+
+    def cited(self, file, record_id) -> bool:
+        lines = self.lines_of(file) or []
+        return any(record_id in references(line) for line in lines)
 
     def is_before_direction(self, thresholds) -> bool:
         choice = self.direction.get("choice") if self.direction else None

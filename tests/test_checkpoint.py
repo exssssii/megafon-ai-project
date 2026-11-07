@@ -271,6 +271,28 @@ class ActionJournal(EmptyCaseTestCase):
                 self.assertEqual((code, result["refused"]), (1, reason))
         self.assertEqual(len(journal_lines(self.case)), 1)
 
+    def test_runtime_keys_write_one_object_with_defaults(self):
+        self.start()
+        self.start("--runtime-version", "2.1.317", "--input-ref", "SRC-0001")
+        self.start("--access", "api", "--input-ref", "SRC-0002")
+        self.start("--cost-source", "не показывается в чате; <b>данные</b>", "--input-ref", "SRC-0003")
+        first, second, third, fourth = journal_lines(self.case)
+        self.assertNotIn("runtime", first)
+        self.assertEqual(second["runtime"], {"version": "2.1.317", "access": "unknown", "cost_source": None})
+        self.assertEqual(third["runtime"], {"version": None, "access": "api", "cost_source": None})
+        self.assertEqual(fourth["runtime"], {"version": None, "access": "unknown",
+                                             "cost_source": "не показывается в чате; <b>данные</b>"})
+        self.assertEqual(vp.validate_case(self.case).errors, [])
+
+    def test_bad_runtime_is_refused_and_writes_nothing(self):
+        for extra in (["--access", "free"], ["--cost-source", "я" * 201], ["--runtime-version", "1" * 201]):
+            with self.subTest(extra=extra):
+                code, result = self.start(*extra)
+                self.assertEqual((code, result["refused"]), (1, "runtime_invalid"))
+        code, _ = self.start("--cost-source", "я" * 200)
+        self.assertEqual(code, 0)
+        self.assertEqual(len(journal_lines(self.case)), 1)
+
     def test_torn_tail_is_cut_and_its_id_is_not_reused(self):
         self.start("--input-ref", "SRC-0001")
         path = self.case / JOURNAL

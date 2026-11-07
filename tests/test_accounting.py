@@ -268,6 +268,82 @@ class Sessions(unittest.TestCase):
         self.assertNotIn("150", line)
 
 
+class Environments(unittest.TestCase):
+    def with_runtime(self, lines, **runtime):
+        lines[0]["runtime"] = {"version": None, "access": "unknown", "cost_source": None} | runtime
+        return lines
+
+    def test_unique_combinations_and_unrecorded_actions(self):
+        lines = (self.with_runtime(act("ACT-0001", "model", 0, 1), version="2.1.317", access="subscription",
+                                   cost_source="не показывается | [в чате]")
+                 + self.with_runtime(act("ACT-0002", "search", 2, 3), version="2.1.317", access="subscription",
+                                     cost_source="не показывается | [в чате]")
+                 + act("ACT-0003", "compute", 4, 5)
+                 + act("ACT-0004", "compute", 6, 7))
+        summary = ac.summarize(lines, [])
+        rows = summary["actions"]["runtimes"]
+        self.assertEqual(sorted((row["recorded"], row["actions"]) for row in rows), [(False, 2), (True, 2)])
+        recorded = next(row for row in rows if row["recorded"])
+        self.assertEqual((recorded["version"], recorded["access"]), ("2.1.317", "subscription"))
+        text = ac.render("c", summary)
+        self.assertLess(text.index("## Действия"), text.index("## Среды и доступ"))
+        self.assertLess(text.index("## Среды и доступ"), text.index("## Ошибки и повторы"))
+        self.assertIn("не показывается / (в чате)", text)
+        self.assertIn("| claude_code | m | не записано | не записано | не записано | 2 |", text)
+
+    def test_different_versions_are_different_rows(self):
+        lines = (self.with_runtime(act("ACT-0001", "model", 0, 1), version="1")
+                 + self.with_runtime(act("ACT-0002", "model", 2, 3), version="2"))
+        self.assertEqual(len(ac.summarize(lines, [])["actions"]["runtimes"]), 2)
+
+
+class Groups(unittest.TestCase):
+    LINES = (act("ACT-0001", "model", 0, 1, cost=measured(input_tokens=10, output_tokens=5, money_usd=None))
+             + act("ACT-0002", "search", 2, 3, cost=measured(input_tokens=7, output_tokens=None, money_usd=None))
+             + act("ACT-0003", "web_read", 4, 5)
+             + act("ACT-0004", "compute", 6, 7)
+             + act("ACT-0005", "human_input", 8, 8, refs=["DEC-0001"]))
+
+    def test_groups_split_the_cost_and_leave_the_total_alone(self):
+        cost = ac.summarize(self.LINES, [])["cost"]
+        groups = cost["groups"]
+        self.assertEqual(list(groups), ["model", "search_web", "other"])
+        self.assertEqual((groups["model"]["actions"], groups["model"]["measured"]["input_tokens"]), (1, 10))
+        self.assertEqual((groups["search_web"]["actions"], groups["search_web"]["not_recorded"],
+                          groups["search_web"]["measured"]["input_tokens"]), (2, 1, 7))
+        self.assertEqual((groups["other"]["actions"], groups["other"]["not_recorded"],
+                          groups["other"]["measured"]["input_tokens"]), (1, 1, None))
+        self.assertEqual(cost["total"], {"basis": "unknown"})
+        self.assertEqual(cost["actions"], {"measured": 2, "estimated": 0, "unknown": 2})
+        self.assertEqual((cost["fields"]["input_tokens"]["measured"], cost["fields"]["input_tokens"]["not_recorded"]),
+                         (17, 2))
+
+    def test_totals_are_the_same_as_before(self):
+        lines = (act("ACT-0001", "model", 0, 1, cost=measured(input_tokens=10, output_tokens=5, money_usd=None))
+                 + act("ACT-0002", "search", 2, 3, cost=measured(input_tokens=7, output_tokens=None, money_usd=None)))
+        self.assertEqual(ac.totals(lines, [])["cost"], {"basis": "measured", "amounts": {
+            "input_tokens": 17, "output_tokens": None, "money_usd": None}})
+        self.assertEqual(set(ac.totals(lines, [])), {"elapsed_seconds", "time_to_first_result_seconds",
+                                                     "human_active_seconds", "cost"})
+
+    def test_session_cover_is_counted_apart_from_unrecorded(self):
+        session = act("ACT-0003", "model", 4, 4, cost=measured(input_tokens=100, output_tokens=None, money_usd=None))
+        session[0]["tool"] = "session"
+        lines = act("ACT-0001", "file_read", 0, 1) + act("ACT-0002", "search", 2, 3) + session
+        cost = ac.summarize(lines, [])["cost"]
+        self.assertEqual((cost["groups"]["other"]["covered_by_session"], cost["groups"]["other"]["not_recorded"]), (1, 0))
+        self.assertEqual((cost["groups"]["search_web"]["covered_by_session"],
+                          cost["groups"]["search_web"]["not_recorded"]), (1, 0))
+        self.assertEqual(cost["groups"]["model"]["measured"]["input_tokens"], 100)
+        self.assertEqual(cost["total"]["basis"], "measured")
+
+    def test_report_has_the_group_table(self):
+        text = ac.render("c", ac.summarize(self.LINES, []))
+        self.assertIn("| Группа | Действий |", text)
+        self.assertIn("| Модель | 1 | 0 | 0 | 10 | 5 | — |", text)
+        self.assertIn("| Поиск и чтение сайтов | 2 | 1 | 0 | 7 | — | — |", text)
+
+
 class Totals(unittest.TestCase):
     def test_nobody_named_a_time(self):
         human = ac.summarize(act("ACT-0001", "human_input", 0, 0, refs=["DEC-0001"]), [])["human"]

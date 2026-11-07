@@ -41,6 +41,9 @@ NOTICE = ("Заметки о помощи человека, причины по�
 PAUSE_SECONDS = 30 * 60
 SESSION_TOOL = "session"
 FIELDS = ("input_tokens", "output_tokens", "money_usd")
+GROUPS = ("model", "search_web", "other")
+GROUP_NAMES = {"model": "Модель", "search_web": "Поиск и чтение сайтов", "other": "Прочие инструменты"}
+NOT_RECORDED = "не записано"
 REPORT = "outputs/accounting.md"
 OPTIONS = "decisions/options.json"
 SOURCES = "evidence/sources.json"
@@ -133,6 +136,7 @@ def actions_section(lines: list[dict]) -> dict:
     environments: dict[str, int] = {}
     models: dict[str, int] = {}
     tools: dict[str, int] = {}
+    runtimes: dict[tuple, dict] = {}
     problems, retries = [], []
     for action_id, entry in outcomes.items():
         start, end = entry["start"], entry["end"]
@@ -147,6 +151,9 @@ def actions_section(lines: list[dict]) -> dict:
         model = start.get("model") if isinstance(start.get("model"), str) else None
         models[model or "не указана"] = models.get(model or "не указана", 0) + 1
         tools[str(start.get("tool"))] = tools.get(str(start.get("tool")), 0) + 1
+        row = runtime_row(start)
+        key = tuple(row.values())
+        runtimes.setdefault(key, row | {"actions": 0})["actions"] += 1
         if state != "completed":
             problems.append({"id": action_id, "kind": kind, "tool": start.get("tool"), "outcome": state,
                              "settled_by": settled.get(action_id)})
@@ -156,7 +163,19 @@ def actions_section(lines: list[dict]) -> dict:
     still_open = [action_id for action_id in open_actions(outcomes) if action_id not in settled]
     return {**counts, "open": still_open, "by_kind": dict(sorted(by_kind.items())), "problems": problems,
             "retries": retries, "environments": dict(sorted(environments.items())),
-            "models": dict(sorted(models.items())), "tools": dict(sorted(tools.items()))}
+            "models": dict(sorted(models.items())), "tools": dict(sorted(tools.items())),
+            "runtimes": sorted(runtimes.values(), key=lambda row: [str(value) for value in row.values()])}
+
+
+def runtime_row(start: dict) -> dict:
+    """Where an action ran: environment, model and the recorded runtime, or none of it recorded."""
+    runtime = start.get("runtime") if isinstance(start.get("runtime"), dict) else None
+    text = lambda value: value if isinstance(value, str) else None  # noqa: E731
+    return {"environment": str(start.get("environment")), "model": text(start.get("model")),
+            "recorded": runtime is not None,
+            "version": text(runtime.get("version")) if runtime else None,
+            "access": text(runtime.get("access")) if runtime else None,
+            "cost_source": text(runtime.get("cost_source")) if runtime else None}
 
 
 # --- human help ------------------------------------------------------------
@@ -254,15 +273,42 @@ def covered_by_session(lines: list[dict], ends: dict, sessions: set) -> set:
     return {key for key in covered if ends[key].get("basis") not in ("measured", "estimated")}
 
 
+def group_of(kind) -> str:
+    if kind == "model":
+        return "model"
+    return "search_web" if kind in ("search", "web_read") else "other"
+
+
 def cost_parts(lines: list[dict]) -> tuple[dict, dict]:
-    ends = {}
+    ends, kinds = {}, {}
     outcomes = action_outcomes(lines)
     for action_id, entry in outcomes.items():
         if not isinstance(entry["start"], dict) or entry["start"].get("kind") == "human_input":
             continue
+        kinds[action_id] = group_of(entry["start"].get("kind"))
         cost = entry["end"].get("cost") if isinstance(entry["end"], dict) else None
         ends[action_id] = cost if isinstance(cost, dict) else UNKNOWN_COST
     covered = covered_by_session(lines, ends, session_figures(outcomes))
+    groups = {name: {"actions": 0, "covered_by_session": 0, "not_recorded": 0, "estimated": 0,
+                     "sums": {field: [Decimal(0), 0] for field in FIELDS}} for name in GROUPS}
+    for action_id, cost in ends.items():
+        slot = groups[kinds[action_id]]
+        slot["actions"] += 1
+        if action_id in covered:
+            slot["covered_by_session"] += 1
+            continue
+        basis = cost.get("basis")
+        if basis == "estimated":
+            slot["estimated"] += 1
+        elif basis != "measured":
+            slot["not_recorded"] += 1
+            continue
+        amounts = cost.get("amounts") if isinstance(cost.get("amounts"), dict) else {}
+        for field in FIELDS:
+            value = quantity(amounts.get(field))
+            if basis == "measured" and value is not None:
+                slot["sums"][field][0] += value
+                slot["sums"][field][1] += 1
     ends = {key: cost for key, cost in ends.items() if key not in covered}
     bases = {"measured": 0, "estimated": 0, "unknown": 0}
     fields = {name: {"measured": Decimal(0), "estimated_min": Decimal(0), "estimated_max": Decimal(0),
@@ -289,7 +335,11 @@ def cost_parts(lines: list[dict]) -> tuple[dict, dict]:
                 slot["estimated_min"] += low
                 slot["estimated_max"] += high
                 slot["estimated_count"] += 1
-    summary = {"actions": bases, "covered_by_session": len(covered), "estimate_sources": sources, "fields": {
+    summary = {"actions": bases, "covered_by_session": len(covered), "estimate_sources": sources, "groups": {
+        name: {"actions": slot["actions"], "covered_by_session": slot["covered_by_session"],
+               "not_recorded": slot["not_recorded"], "estimated": slot["estimated"],
+               "measured": {field: number(total) if count else None for field, (total, count) in slot["sums"].items()}}
+        for name, slot in groups.items()}, "fields": {
         name: {"measured": number(slot["measured"]) if slot["measured_count"] else None,
                "estimated": ({"min": number(slot["estimated_min"]), "max": number(slot["estimated_max"])}
                              if slot["estimated_count"] else None),
@@ -440,6 +490,18 @@ def render(case_id: str, summary: dict) -> str:
             "Модели: " + listing(actions["models"]) + ".",
             "Инструменты: " + listing(actions["tools"]) + ".", ""]
 
+    out += ["## Среды и доступ", "",
+            "| Среда | Модель | Версия | Доступ | Источник данных о расходе | Действий |", "|---|---|---|---|---|---|"]
+    for row in actions["runtimes"]:
+        if row["recorded"]:
+            version, access, source = (plain(row[name]) if row[name] is not None else "не указано"
+                                       for name in ("version", "access", "cost_source"))
+        else:
+            version = access = source = NOT_RECORDED
+        out.append(f"| {plain(row['environment'])} | {plain(row['model'] or 'не указана')} | {version} | {access} | "
+                   f"{source} | {row['actions']} |")
+    out.append("")
+
     out += ["## Ошибки и повторы", ""]
     if not actions["problems"] and not actions["retries"]:
         out.append("Ошибок, неизвестных исходов и повторов нет.")
@@ -474,6 +536,13 @@ def render(case_id: str, summary: dict) -> str:
     out += ["", f"Действий с измеренным расходом: {cost['actions']['measured']}, с оценкой: {cost['actions']['estimated']}, "
             f"без учёта: {cost['actions']['unknown']}, вошло в расход сеанса: {cost['covered_by_session']}. "
             "Участие человека в расход модели не входит."]
+    out += ["", "| Группа | Действий | Без учёта | Вошло в расход сеанса | Токены на входе | Токены на выходе | Деньги, USD |",
+            "|---|---|---|---|---|---|---|"]
+    for name, group in cost["groups"].items():
+        out.append(f"| {GROUP_NAMES[name]} | {group['actions']} | {group['not_recorded']} | "
+                   f"{group['covered_by_session']} | "
+                   + " | ".join(cell(group["measured"][field], field) for field in FIELDS) + " |")
+    out += ["", "В таблице групп только измеренные суммы; оценки в неё не входят."]
     if cost["estimate_sources"]:
         out += ["", "Источники оценок:", ""] + [f"- {plain(source)}" for source in cost["estimate_sources"]]
     out += ["", "Подписка Claude или ChatGPT не означает нулевого расхода: доля подписки неизвестна и в деньги не переводится.", ""]

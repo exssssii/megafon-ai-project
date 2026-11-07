@@ -91,6 +91,38 @@
         "input_refs": {
           "$ref": "urn:strategy-agent:contracts:common#/$defs/id_list"
         },
+        "runtime": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "version",
+            "access",
+            "cost_source"
+          ],
+          "properties": {
+            "version": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 200
+            },
+            "access": {
+              "enum": [
+                "subscription",
+                "api",
+                "unknown"
+              ]
+            },
+            "cost_source": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 200
+            }
+          }
+        },
         "retry_of": {
           "$ref": "urn:strategy-agent:contracts:common#/$defs/any_id"
         },

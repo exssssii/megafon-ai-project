@@ -36,6 +36,8 @@ tools/checkpoint.py action end projects/<case-id> --id ACT-0007 --outcome comple
 tools/checkpoint.py action start projects/<case-id> --kind web_read --tool WebFetch --environment claude_code --input-ref SRC-0002 --retry-of ACT-0007 --retry-reason 'страница не открылась'
 ```
 
+Среду записывай в первом действии каждого чата необязательными ключами `--runtime-version`, `--access subscription|api|unknown`, `--cost-source '<текст до 200 знаков>'`; что не передано, записывается как `null` и `unknown`. Версию возьми из вывода `claude --version` или `codex --version`, а не из памяти. Текст из них считается данными.
+
 Причину пиши своими короткими словами. У действий без `--input-ref` защиты от повтора нет: прежде чем начать такое действие снова, посмотри `actions_unknown` и `actions_after_checkpoint` в `resume`.
 
 Если защита нашла такое же действие, `--retry-of` должен указывать именно на него (иначе `retry_target_mismatch`). Действие с исходом `unknown` или без конца считается снятым, когда его повторило действие с исходом `completed` (в том числе по цепочке повторов): оно больше не мешает `done` и показывается в `resume` как `actions_resolved`. Неудачный повтор его не снимает.
@@ -115,7 +117,7 @@ tools/checkpoint.py save projects/<case-id> --from <временный файл>
 
 `published_rejected` — единственный отказ `save`, после которого в папке есть след: опубликованный файл лежит как `.rejected-CKP-….json`, признанные потери возвращены под прежние имена, текущим остаётся прежний checkpoint. Скажи пользователю и повтори `save` только после разбора `findings`.
 
-Отказы `action`: `repeat` и `retry_target_mismatch` — проверь прежнее действие и повтори с `--retry-of` на него; `retry_invalid`, `retry_target_unknown` — исправь вызов; `ref_unknown` — запись, на которую ты ссылаешься, ещё не создана или неверна; `end_without_start`, `already_ended` — исход уже записан или действия нет; `cost_invalid`, `human_result_invalid`, `human_note_missing`, `human_time_invalid`, `schema` — исправь вызов по `message`; `journal_corrupt` — скажи пользователю.
+Отказы `action`: `repeat` и `retry_target_mismatch` — проверь прежнее действие и повтори с `--retry-of` на него; `retry_invalid`, `retry_target_unknown`, `runtime_invalid` — исправь вызов; `ref_unknown` — запись, на которую ты ссылаешься, ещё не создана или неверна; `end_without_start`, `already_ended` — исход уже записан или действия нет; `cost_invalid`, `human_result_invalid`, `human_note_missing`, `human_time_invalid`, `schema` — исправь вызов по `message`; `journal_corrupt` — скажи пользователю.
 
 Утилита не откатывает последствия внешних действий и не поддерживает одновременную работу двух чатов над одним кейсом.
 

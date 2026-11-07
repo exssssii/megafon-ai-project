@@ -522,6 +522,33 @@ class Mutating(CaseTestCase):
                 self.expect(errors, warnings)
 
 
+class RecordTimes(Mutating):
+    FUTURE = "2999-01-01T00:00:00+03:00"
+
+    def test_future_stamp_is_time_in_future(self):
+        def created(d):
+            d["records"][0]["created_at"] = self.FUTURE
+
+        def proposed(d):
+            d["records"][1]["proposal"]["proposed_at"] = self.FUTURE
+
+        def chosen(d):
+            d["records"][1]["choice"]["chosen_at"] = self.FUTURE
+
+        for label, mutate in (("created_at", created), ("proposed_at", proposed), ("chosen_at", chosen)):
+            with self.subTest(label):
+                self.reset()
+                self.edit(DECISIONS, mutate)
+                self.expect(["TIME_IN_FUTURE"])
+
+    def test_clock_difference_of_two_machines_is_accepted(self):
+        recorded = vp.datetime.fromisoformat(read_json(self.case / DECISIONS)["records"][0]["created_at"])
+        with mock.patch.object(vp, "current_time", return_value=recorded - vp.timedelta(minutes=4)):
+            self.assertNotIn("TIME_IN_FUTURE", codes(self.run_case())[0])
+        with mock.patch.object(vp, "current_time", return_value=recorded - vp.timedelta(minutes=6)):
+            self.assertIn("TIME_IN_FUTURE", codes(self.run_case())[0])
+
+
 class Robustness(Mutating):
     def test_decision_option_of_another_type_is_wrong_type(self):
         for target in ("CLM-0001", "ACT-0001", "SRC-0001", "DEC-0001"):

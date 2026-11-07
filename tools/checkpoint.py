@@ -303,6 +303,23 @@ def start_line(version: int, action_id: str, args, kind: str, input_refs: list[s
     }
 
 
+ACCESS_KINDS = ["subscription", "api", "unknown"]
+RUNTIME_TEXT_LIMIT = 200
+
+
+def runtime_of(args) -> dict | None:
+    """The environment record of a start line; absent unless at least one key was given."""
+    version, access, source = args.runtime_version, args.access, args.cost_source
+    if version is None and access is None and source is None:
+        return None
+    if access is not None and access not in ACCESS_KINDS:
+        raise Refused("runtime_invalid", "--access: subscription, api или unknown")
+    for name, value in (("--runtime-version", version), ("--cost-source", source)):
+        if value is not None and len(value) > RUNTIME_TEXT_LIMIT:
+            raise Refused("runtime_invalid", f"{name} длиннее {RUNTIME_TEXT_LIMIT} знаков")
+    return {"version": version, "access": access or "unknown", "cost_source": source}
+
+
 def end_line(version: int, action_id: str, outcome: str, result_refs: list[str], cost: dict) -> dict:
     return {"format_version": version, "id": action_id, "phase": "end", "outcome": outcome,
             "result_refs": result_refs, "cost": cost, "at": now()}
@@ -333,6 +350,9 @@ def cmd_action_start(args) -> int:
                       repeat_of=repeat)
     action_id = next_id(root)
     line = start_line(version, action_id, args, args.kind, input_refs)
+    runtime = runtime_of(args)
+    if runtime is not None:
+        line["runtime"] = runtime
     if args.retry_of:
         line["retry_of"], line["retry_reason"] = args.retry_of, args.retry_reason
     check_lines([line])
@@ -1015,6 +1035,9 @@ def build_parser() -> Parser:
     start.add_argument("--input-ref", action="append")
     start.add_argument("--retry-of")
     start.add_argument("--retry-reason")
+    start.add_argument("--runtime-version")
+    start.add_argument("--access")
+    start.add_argument("--cost-source")
     start.set_defaults(run=cmd_action_start)
 
     end = steps.add_parser("end")

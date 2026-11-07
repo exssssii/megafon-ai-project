@@ -14,7 +14,7 @@ import math
 import re
 import sys
 from dataclasses import asdict, dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -37,7 +37,7 @@ ERROR_CODES = frozenset({
     "DECISION_MULTIPLE_ACTIVE", "ACTION_RETRY", "ACTION_ORDER", "ACTION_COST", "ACTION_HUMAN", "OUTPUT_LINK",
     "PATH_UNSAFE", "SCHEMA", "FORMAT_UNSUPPORTED", "FORMAT_MIXED", "CASE_INVALID",
     "FILE_CORRUPT", "CHECKPOINT_NONE_VALID", "CHECKPOINT_CLAIM", "LOCATOR_NOT_FOUND", "QUOTE_NOT_FOUND",
-    "CALC_MISMATCH",
+    "CALC_MISMATCH", "TIME_IN_FUTURE",
 })
 WARNING_CODES = frozenset({
     "BASIS_UNCONFIRMED", "SOURCE_PARTIAL", "ACTION_UNKNOWN", "JOURNAL_TORN",
@@ -60,6 +60,8 @@ REGISTRIES = {
 }
 REGISTRY_FILE = {prefix: rel for rel, (_, prefix) in REGISTRIES.items()}
 JOURNAL = "state/actions.jsonl"
+# Clocks of two machines differ a little; a case moved between them must stay valid.
+CLOCK_TOLERANCE = timedelta(minutes=5)
 CHECKPOINT_DIR = "state/checkpoints"
 
 ALL_PREFIXES = {"SRC", "CLM", "CALC", "Q", "OPT", "DEC", "ACT", "CKP"}
@@ -260,6 +262,10 @@ def names_tariff_date(text: str) -> bool:
         except ValueError:
             continue
     return False
+
+
+def current_time() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 def finite(value) -> bool:
@@ -536,6 +542,19 @@ class Validator:
         self.check_questions()
         self.check_options()
         self.check_decisions()
+        self.check_times()
+
+    def check_times(self):
+        """Registries are written by hand: a guessed stamp would pass for the case's real timing."""
+        latest = current_time() + CLOCK_TOLERANCE
+        for prefix, records in self.registries.items():
+            for record in records:
+                nested = [record.get(key) if isinstance(record.get(key), dict) else {} for key in ("proposal", "choice")]
+                for stamp in (record.get("created_at"), nested[0].get("proposed_at"), nested[1].get("chosen_at")):
+                    moment = datetime.fromisoformat(stamp) if isinstance(stamp, str) else None
+                    if moment is not None and moment.tzinfo is not None and moment > latest:
+                        self.error("TIME_IN_FUTURE", REGISTRY_FILE[prefix], record["id"],
+                                    f"{stamp} is later than now: take the time from the system clock")
 
     def check_reason(self, file, record):
         status = record.get("record_status", record.get("status"))
