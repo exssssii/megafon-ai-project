@@ -2,7 +2,7 @@
 
 Commands (run from the repository root):
   new --from <file>      create projects/<case_id>/ with case.json
-  usage <case folder>    count searches, page reads and active sources (reads only)
+  usage <case folder>    count searches, page reads and active sources against the brief (reads only)
 
 The request for `new` is a JSON file {"case_id", "title"} in UTF-8: a title is
 case text and never goes through the shell. The first output line is a JSON
@@ -18,7 +18,7 @@ import sys
 from pathlib import Path
 
 from checkpoint import EXIT_INTERNAL, EXIT_OK, EXIT_REFUSED, EXIT_USAGE, Parser, Refused, UsageError
-from checkpoint import case_version, emit, now, open_case, read_journal
+from checkpoint import budget_used, case_version, emit, now, open_case, read_journal, research_budget, web_sources_used
 from validate_project import parse_json
 
 PROJECTS = Path(__file__).resolve().parent.parent / "projects"
@@ -69,20 +69,20 @@ def count_sources(root: Path) -> int:
     if not path.exists():
         return 0
     try:
-        records = parse_json(path.read_bytes())["records"]
-        return sum(record["record_status"] == "active" for record in records)
-    except (OSError, ValueError, KeyError, TypeError):
+        return web_sources_used(parse_json(path.read_bytes())["records"])
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
         raise Refused("sources_unreadable", "реестр источников не читается") from None
 
 
 def cmd_usage(args) -> int:
     root = open_case(args.case)
     case_version(root)
-    starts = [line for line in read_journal(root) if isinstance(line, dict) and line.get("phase") == "start"]
+    lines = read_journal(root)
     emit({"status": "ok",
-          "searches": sum(line.get("kind") == "search" for line in starts),
-          "web_reads": sum(line.get("kind") == "web_read" for line in starts),
-          "sources": count_sources(root)})
+          "searches": budget_used(lines, "search"),
+          "web_reads": budget_used(lines, "web_read"),
+          "sources": count_sources(root),
+          "limits": research_budget(root)})
     return EXIT_OK
 
 

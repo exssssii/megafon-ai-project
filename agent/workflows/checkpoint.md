@@ -42,7 +42,7 @@ tools/checkpoint.py action start projects/<case-id> --kind web_read --tool WebFe
 
 Если защита нашла такое же действие, `--retry-of` должен указывать именно на него (иначе `retry_target_mismatch`). Действие с исходом `unknown` или без конца считается снятым, когда его повторило действие с исходом `completed` (в том числе по цепочке повторов): оно больше не мешает `done` и показывается в `resume` как `actions_resolved`. Неудачный повтор его не снимает.
 
-Начатое без конца закрывается обычным `action end`, когда результат проверен. Конец записывается один раз. Если записан `unknown`, он остаётся навсегда: проверка и настоящий повтор идут новым действием с `--retry-of` на него и причиной.
+Начатое без конца закрывается обычным `action end`, когда результат проверен. Если действие оставалось открытым на время перерыва, добавь `--interrupted`, см. [учёт](accounting.md#сводка-и-отчёт). Конец записывается один раз. Если записан `unknown`, он остаётся навсегда: проверка и настоящий повтор идут новым действием с `--retry-of` на него и причиной.
 
 4. Выбор человека. Когда пользователь ответил на вопрос, где нужен его выбор, сначала запиши ответ: `tools/checkpoint.py action human projects/<case-id> --tool chat --environment claude_code --result-ref DEC-0003`. Здесь `DEC-0003` — номер решения, которое ты сразу создашь в `decisions/decisions.json`, со словами пользователя в `choice.user_statement` и номером этого действия в `choice.action_id`. Так выбор человека остаётся отдельным от твоего предложения. Не записывай `human_input` за то, чего пользователь не говорил. Если сбой случился после `action human`, но до появления решения в реестре, это выбор без решения: спроси пользователя заново, а не восстанавливай его слова по памяти.
 
@@ -117,7 +117,7 @@ tools/checkpoint.py save projects/<case-id> --from <временный файл>
 
 `published_rejected` — единственный отказ `save`, после которого в папке есть след: опубликованный файл лежит как `.rejected-CKP-….json`, признанные потери возвращены под прежние имена, текущим остаётся прежний checkpoint. Скажи пользователю и повтори `save` только после разбора `findings`.
 
-Отказы `action`: `repeat` и `retry_target_mismatch` — проверь прежнее действие и повтори с `--retry-of` на него; `retry_invalid`, `retry_target_unknown`, `runtime_invalid` — исправь вызов; `ref_unknown` — запись, на которую ты ссылаешься, ещё не создана или неверна; `end_without_start`, `already_ended` — исход уже записан или действия нет; `cost_invalid`, `human_result_invalid`, `human_note_missing`, `human_time_invalid`, `schema` — исправь вызов по `message`; `journal_corrupt` — скажи пользователю.
+Отказы `action`: `budget_exhausted` и `budget_unreadable` — см. [бюджет исследования](run-case.md#бюджет-исследования); `repeat` и `retry_target_mismatch` — проверь прежнее действие и повтори с `--retry-of` на него; `retry_invalid`, `retry_target_unknown`, `runtime_invalid` — исправь вызов; `ref_unknown` — запись, на которую ты ссылаешься, ещё не создана или неверна; `end_without_start`, `already_ended` — исход уже записан или действия нет; `cost_invalid`, `human_result_invalid`, `human_note_missing`, `human_time_invalid`, `schema` — исправь вызов по `message`; `journal_corrupt` — скажи пользователю.
 
 Утилита не откатывает последствия внешних действий и не поддерживает одновременную работу двух чатов над одним кейсом.
 

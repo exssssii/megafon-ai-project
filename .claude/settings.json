@@ -3,5 +3,18 @@
     "commit": "",
     "pr": "",
     "sessionUrl": false
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "WebSearch|WebFetch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "P=\"$CLAUDE_PROJECT_DIR/.venv/Scripts/python.exe\"; [ -x \"$P\" ] || P=\"$CLAUDE_PROJECT_DIR/.venv/bin/python\"; [ -x \"$P\" ] || exit 0; \"$P\" \"$CLAUDE_PROJECT_DIR/tools/web_guard.py\""
+          }
+        ]
+      }
+    ]
   }
 }

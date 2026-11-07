@@ -495,6 +495,31 @@ class Numbers(Base):
     def test_number_without_link(self):
         self.assertIn("NUMBER_UNLINKED", self.line("Заявок 120 в месяц."))
 
+    def brief(self, words):
+        self.write("brief.md", f"# Бриф\n\n## Ограничения\n\nБюджет 900 тысяч\n\n## Слова пользователя\n\n{words}\n")
+
+    def test_number_of_the_user_needs_the_brief_link(self):
+        self.brief("«Бюджет на квартал — 600 тысяч рублей»")
+        self.assertIn("NUMBER_UNLINKED", self.line("Бюджет 600 тыс. рублей."))
+        for text, previous in (("Бюджет 600 тыс. рублей [бриф].", "Бюджет 600 тыс. рублей."),
+                               ("Бюджет 600 000 рублей [бриф].", "Бюджет 600 тыс. рублей [бриф].")):
+            self.replace(self.FILE, previous, text)
+            self.assertFalse({"NUMBER_UNLINKED", "NUMBER_MISMATCH", "SECTION_UNLINKED"} & self.codes("strategies"), text)
+
+    def test_brief_link_backs_only_the_words_of_the_user(self):
+        self.brief("«Бюджет на квартал — 600 тысяч рублей»")
+        self.assertIn("NUMBER_MISMATCH", self.line("Бюджет 900 тыс. рублей [бриф]."))
+
+    def test_brief_link_compares_the_unit_too(self):
+        self.brief("«Хочу 3 варианта. Бюджет — 600 тысяч рублей, команда 5 человек»")
+        self.assertIn("NUMBER_MISMATCH", self.line("Конверсия вырастет на 3% [бриф]."))
+        self.replace(self.FILE, "Конверсия вырастет на 3% [бриф].", "Выручка 5 млн рублей [бриф].")
+        self.assertIn("NUMBER_MISMATCH", self.codes("strategies"))
+
+    def test_brief_link_does_not_back_a_number_next_to_a_record(self):
+        self.brief("«Бюджет 600 тысяч»")
+        self.assertIn("NUMBER_MISMATCH", self.line("Бюджет 700 тыс. на 120 заявок [бриф] [CALC-0001]."))
+
     def test_link_to_option_backs_no_number(self):
         self.assertIn("NUMBER_UNLINKED", self.line("Заявок 120 в месяц [OPT-0001]."))
 

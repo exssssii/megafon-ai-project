@@ -71,19 +71,36 @@ def seconds(later: datetime, earlier: datetime) -> int:
     return max(0, int((later - earlier).total_seconds()))
 
 
-def first_result(options: list[dict]) -> tuple[str, datetime] | None:
-    """The earliest option that was not withdrawn: the first thing a decision can rest on."""
-    found = [(at, record["id"]) for record in options
-             if record.get("record_status") != "withdrawn" and isinstance(record.get("id"), str)
-             for at in [aware(record.get("created_at"))] if at is not None]
-    if not found:
+def first_result(options: list[dict], lines: list[dict]) -> tuple[str, datetime, bool] | None:
+    """The earliest option that was not withdrawn: the first thing a decision can rest on.
+
+    The time comes from the end of the action that wrote the option: the utility stamps it. The agent writes
+    `created_at` of the record itself, so that time is used only when no action names the option, and is marked.
+    """
+    active = {record["id"]: record for record in options
+              if record.get("record_status") != "withdrawn" and isinstance(record.get("id"), str)}
+    stamped = [(at, ref) for line in lines
+               if line.get("phase") == "end" and line.get("outcome") == "completed" and "human" not in line
+               and isinstance(line.get("result_refs"), list)
+               for ref in line["result_refs"] if isinstance(ref, str) and ref in active
+               for at in [aware(line.get("at"))] if at is not None]
+    written = [(at, record_id) for record_id, record in active.items()
+               for at in [aware(record.get("created_at"))] if at is not None]
+    if stamped and (not written or min(written)[1] in {ref for _, ref in stamped}):
+        at, record_id = min(stamped)
+        return record_id, at, True
+    if not written:
         return None
-    at, record_id = min(found)
-    return record_id, at
+    at, record_id = min(written)
+    return record_id, at, False
 
 
 def action_spans(lines: list[dict]) -> list[tuple[datetime, datetime]]:
-    """From start to end of each finished action: the agent was busy, whatever the journal shows in between."""
+    """From start to end of each finished action: the agent was busy, whatever the journal shows in between.
+
+    An action closed as `unknown` or marked interrupted says nothing about the time in between: it stayed open
+    over a break.
+    """
     starts, spans = {}, []
     for line in lines:
         key, at = line.get("id"), aware(line.get("at"))
@@ -91,7 +108,8 @@ def action_spans(lines: list[dict]) -> list[tuple[datetime, datetime]]:
             continue
         if line.get("phase") == "start":
             starts.setdefault(key, at)
-        elif line.get("phase") == "end" and key in starts:
+        elif line.get("phase") == "end" and key in starts and line.get("outcome") != "unknown" \
+                and not line.get("interrupted"):
             spans.append((starts[key], at))
     return spans
 
@@ -103,8 +121,7 @@ def time_section(lines: list[dict], options: list[dict], created_at=None) -> tup
         return {"started_at": None, "last_at": None, "elapsed_seconds": 0, "working_seconds": 0, "pauses": [],
                 "time_to_first_result_seconds": None, "first_result": None}, warnings
     start = min(anchors)
-    written = [at for at in (aware(record.get("created_at")) for record in options) if at is not None and at >= start]
-    stamps = sorted(anchors + written)
+    stamps = sorted(anchors)
     last = stamps[-1]
     spans = action_spans(lines)
     pauses, working = [], 0
@@ -115,11 +132,15 @@ def time_section(lines: list[dict], options: list[dict], created_at=None) -> tup
             pauses.append({"from": earlier.isoformat(), "to": later.isoformat(), "seconds": gap})
         else:
             working += gap
-    result = first_result(options)
+            if gap > PAUSE_SECONDS and "LONG_ACTION_COUNTED" not in warnings:
+                warnings.append("LONG_ACTION_COUNTED")
+    result = first_result(options, lines)
     to_result = None
     if result is not None:
         if result[1] < start:
             warnings.append("FIRST_RESULT_BEFORE_JOURNAL")
+        if not result[2]:
+            warnings.append("FIRST_RESULT_UNSTAMPED")
         to_result = seconds(result[1], start)
     return {"started_at": start.isoformat(), "last_at": last.isoformat(), "elapsed_seconds": seconds(last, start),
             "working_seconds": working, "pauses": pauses, "time_to_first_result_seconds": to_result,
@@ -481,6 +502,10 @@ def render(case_id: str, summary: dict) -> str:
         out.append("Перерывов дольше 30 минут нет.")
     if "FIRST_RESULT_BEFORE_JOURNAL" in summary["warnings"]:
         out += ["", "Варианты записаны раньше начала отсчёта: даты в реестре расходятся с журналом, время до первого результата занижено."]
+    if "FIRST_RESULT_UNSTAMPED" in summary["warnings"]:
+        out += ["", "Время до первых вариантов взято из записи агента: завершённое действие, которое их записало, в журнале их не называет. Эта запись может оказаться позже конца журнала."]
+    if "LONG_ACTION_COUNTED" in summary["warnings"]:
+        out += ["", "Во время в работе вошло действие дольше 30 минут без промежуточных записей. Если на него пришёлся перерыв, это время завышено."]
     out.append("")
 
     out += ["## Действия", "", "| Вид | Всего | Завершено | Ошибка | Неизвестно | Без конца |", "|---|---|---|---|---|---|"]
@@ -548,7 +573,7 @@ def render(case_id: str, summary: dict) -> str:
     out += ["", "Подписка Claude или ChatGPT не означает нулевого расхода: доля подписки неизвестна и в деньги не переводится.", ""]
 
     out += ["## Как считалось", "",
-            "- Полное время — от создания кейса до самой поздней отметки журнала или реестра вариантов.",
+            "- Полное время — от создания кейса до самой поздней отметки журнала.",
             "- Время в работе — то же без промежутков дольше 30 минут, когда ни одно действие не шло. Порог условный.",
             "- Первый полезный результат — самый ранний неотозванный вариант действий.",
             "- Активное время человека известно, если он назвал его за весь кейс или для каждого своего участия.",

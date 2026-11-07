@@ -920,6 +920,8 @@ class Tracer:
             warnings.append("source_no_text")
         elif extraction["status"] == "partial" or not extraction["complete"]:
             warnings.append("source_partial")
+        if source["type"] == "web" and source["sha256"] is None and extraction["status"] not in UNREADABLE_EXTRACTION:
+            warnings.append("source_via_model")
         item = {"title": source["title"], "location": source["location"], "source_status": source["record_status"],
                 "extraction": extraction}
         others = sorted({other for key in address_keys(source) for other in self.addresses[key]} - {source["id"]})

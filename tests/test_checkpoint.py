@@ -89,6 +89,7 @@ class ValidatorCheckpointStatus(CaseTestCase):
         self.assertEqual(set(json.loads(result.stdout)), {"errors", "warnings", "current_checkpoint"})
 
 
+import accounting  # noqa: E402
 import checkpoint as ck  # noqa: E402
 
 
@@ -148,6 +149,91 @@ class BriefApproval(EmptyCaseTestCase):
         self.assertEqual((code, result["stage"]), (0, "research"))
         self.assertEqual(result["human_choices"],
                          [{"id": "DEC-0001", "topic": "brief", "user_statement": "Да, всё верно"}])
+
+
+class Interrupted(EmptyCaseTestCase):
+    def test_flag_is_written_and_passes_the_contract(self):
+        self.start()
+        self.assertEqual(self.end("ACT-0001", "completed", "--interrupted")[0], 0)
+        self.assertIs(journal_lines(self.case)[-1]["interrupted"], True)
+        lines = journal_lines(self.case)
+        lines[0]["at"], lines[1]["at"] = "2026-11-06T10:00:00+03:00", "2026-11-06T14:00:00+03:00"
+        self.assertEqual(len(accounting.summarize(lines, [])["time"]["pauses"]), 1)
+        self.assertEqual(run("action", "start", self.case, "--kind", "model", "--tool", "other",
+                             "--environment", "claude_code")[0], 0)
+
+
+class ResearchBudget(EmptyCaseTestCase):
+    def brief(self, text):
+        (self.case / "brief.md").write_bytes(f"# Бриф\n\n## Бюджет исследования\n\n{text}\n\n## Слова пользователя\n\n"
+                                             "«Хочу 3 варианта»\n".encode("utf-8"))
+
+    def test_limit_stops_the_action_and_writes_nothing(self):
+        self.brief("2 поисковых запроса, 1 чтение страницы, 5 источников")
+        self.assertEqual(self.start(kind="search", tool="WebSearch")[0], 0)
+        self.assertEqual(self.start(kind="search", tool="WebSearch")[0], 0)
+        before = (self.case / JOURNAL).read_bytes()
+        code, result = self.start(kind="search", tool="WebSearch")
+        self.assertEqual((code, result["refused"], result["used"], result["limit"]), (1, "budget_exhausted", 2, 2))
+        self.assertEqual((self.case / JOURNAL).read_bytes(), before)
+
+    def test_limits_are_separate_and_other_actions_are_free(self):
+        self.brief("0 поисков и 1 чтение страницы\n\n5 источников")
+        self.assertEqual(self.start(kind="web_read", tool="WebFetch")[0], 0)
+        self.assertEqual(self.start(kind="search", tool="WebSearch")[1]["refused"], "budget_exhausted")
+        self.assertEqual(self.start(kind="web_read", tool="WebFetch")[1]["refused"], "budget_exhausted")
+        self.assertEqual(self.start(kind="file_read", tool="read")[0], 0)
+
+    def test_raised_limit_lets_the_work_go_on(self):
+        self.brief("0 поисков, 0 чтений страниц")
+        self.assertEqual(self.start(kind="search", tool="WebSearch")[1]["refused"], "budget_exhausted")
+        self.brief("1 поиск, 0 чтений страниц")
+        self.assertEqual(self.start(kind="search", tool="WebSearch")[0], 0)
+
+    def test_section_without_a_number_stops_the_action(self):
+        self.brief("как договоримся")
+        code, result = self.start(kind="web_read", tool="WebFetch")
+        self.assertEqual((code, result["refused"]), (1, "budget_unreadable"))
+
+    def test_case_without_a_brief_is_not_limited(self):
+        self.assertEqual(self.start(kind="search", tool="WebSearch")[0], 0)
+
+    def test_brief_without_the_section_stops_the_action(self):
+        (self.case / "brief.md").write_text("# Бриф\n\n## Вопрос\n\nЧто делать\n", encoding="utf-8")
+        self.assertEqual(self.start(kind="web_read", tool="WebFetch")[1]["refused"], "budget_unreadable")
+
+    def limits(self, text):
+        self.brief(text)
+        return ck.research_budget(self.case)
+
+    def test_explanations_do_not_hide_the_limits(self):
+        expected = {"searches": 8, "web_reads": 20, "sources": 12}
+        for text in ("8 поисковых запросов, 20 чтений страниц, 12 источников",
+                     "8 поисковых запросов, 20 чтений страниц, 12 источников. Поиск только по открытым источникам.",
+                     "- Поисковых запросов: 8\n- Чтений страниц: 20\n- Источников: 12",
+                     "| Поисковых запросов | 8 |\n| Чтений страниц | 20 |\n| Источников | 12 |",
+                     "8 поисковых запросов (по 2 на вопрос), 20 чтений страниц / 12 источников",
+                     "8 запросов, 20 страниц, 12 источников\n\n### Расширение\n\n4 дополнительных поиска"):
+            self.assertEqual(self.limits(text), expected, text)
+
+    def test_two_values_for_one_limit_are_not_guessed(self):
+        self.assertIsNone(self.limits("8 поисков, потом 12 поисков, 20 чтений страниц")["searches"])
+
+    def test_retry_of_an_unknown_action_passes_the_limit_once(self):
+        self.brief("1 поиск, 1 чтение страницы")
+        self.start(kind="search", tool="WebSearch")
+        self.end("ACT-0001", "unknown")
+        retry = ("--retry-of", "ACT-0001", "--retry-reason", "оборвалось")
+        self.assertEqual(self.start(*retry, kind="search", tool="WebSearch")[0], 0)
+        self.end("ACT-0002")
+        self.assertEqual(self.start(*retry, kind="search", tool="WebSearch")[1]["refused"], "budget_exhausted")
+
+    def test_retry_of_a_failed_action_counts(self):
+        self.brief("1 поиск, 1 чтение страницы")
+        self.start(kind="search", tool="WebSearch")
+        self.end("ACT-0001", "failed")
+        code, result = self.start("--retry-of", "ACT-0001", "--retry-reason", "сбой", kind="search", tool="WebSearch")
+        self.assertEqual((code, result["refused"]), (1, "budget_exhausted"))
 
 
 class ActionJournal(EmptyCaseTestCase):

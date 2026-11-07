@@ -1,7 +1,7 @@
 """Register case materials and read them back with contract locators.
 
-Commands: inspect, add, add-web, show, find. Web pages are read by the environment,
-this tool only stores what was read and never opens the network.
+Commands: inspect, add, add-web, fetch-web, show, find. `fetch-web` downloads a public
+page itself, `add-web` stores what the environment read. Only `fetch-web` opens the network.
 
 Exit codes: 0 done, 2 no text, 3 over a limit, 4 nothing written, 5 internal failure.
 The first output line is a JSON report without material content. Registry and files
@@ -28,7 +28,9 @@ from material_extract import (
     numbered,
     text_blocks,
 )
+import checkpoint
 from validate_project import is_http_url
+from web_fetch import FetchError, Page, fetch_page  # noqa: F401
 
 EXIT_OK, EXIT_NO_TEXT, EXIT_OVER_LIMIT, EXIT_REFUSED, EXIT_INTERNAL = 0, 2, 3, 4, 5
 FORMAT_VERSION = 1
@@ -357,6 +359,77 @@ def read_incoming(case: Case, path: Path, limits: dict) -> str:
     return text
 
 
+def check_sources_limit(case: Case) -> None:
+    try:
+        budget = checkpoint.research_budget(case.root)
+    except checkpoint.Refused:
+        return
+    limit = budget["sources"] if budget else None
+    used = checkpoint.web_sources_used(case.records)
+    if limit is not None and used >= limit:
+        raise Refused("лимит источников брифа исчерпан: ничего не записано", refused="budget_exhausted",
+                      used=used, limit=limit)
+
+
+def add_web_record(case: Case, args, result: Extraction, limits_text: str, sha256: str | None) -> dict:
+    source_id = case.next_id()
+    stamp = now()
+    extraction = {"status": result.status, "complete": result.complete, "limits": limits_text}
+    case.records.append({
+        "id": source_id,
+        "created_at": stamp,
+        "record_status": "active",
+        "type": "web",
+        "title": args.title,
+        "location": {"url": args.url},
+        "origin": "public_web",
+        "allowed": True,
+        "retrieved_at": stamp,
+        "sha256": sha256,
+        "extraction": extraction,
+    })
+    commit_new(case, source_id, result, None)
+    return {"id": source_id, "blocks": len(result.blocks)} | extraction
+
+
+def require_open_read(case: Case) -> None:
+    """A read through a command is invisible to a hook: the journal is where it gets counted."""
+    try:
+        lines = checkpoint.read_journal(case.root)
+    except checkpoint.Refused:
+        raise Refused("журнал не читается: чтение не посчитать", refused="journal_unreadable") from None
+    if not checkpoint.has_open_action(lines, "web_read"):
+        raise Refused("сначала начни действие --kind web_read: ничего не скачано", refused="action_missing")
+
+
+def cmd_fetch_web(args, limits: dict) -> int:
+    case = Case(args.case)
+    if not is_http_url(args.url):
+        raise Refused("--url должен быть адресом http или https")
+    require_open_read(case)
+    for record in case.records:
+        if (record["record_status"] == "active" and record["location"].get("url") == args.url
+                and record["sha256"] and record["extraction"]["status"] in TEXT_STATUSES):
+            emit({"id": record["id"], "existing": True} | record["extraction"])
+            return EXIT_OK
+    check_sources_limit(case)
+    try:
+        page = fetch_page(args.url)
+    except FetchError as error:
+        raise Refused("страница не получена: ничего не записано", fetch_error=error.code,
+                      http_status=error.status) from None
+    if len(page.text) > limits["max_text_chars"]:
+        page.text, page.complete = page.text[:limits["max_text_chars"]], False
+    blocks = numbered(text_blocks(page.text, markdown=True))
+    status = "ok" if page.complete else "partial"
+    result = Extraction(status, blocks, {"type": "web", "status": status, "blocks": len(blocks)})
+    moved = f" Адрес после переадресации: {page.final_url}." if page.final_url != args.url else ""
+    limits_text = ("Скачано утилитой без модели, скрипты страницы не выполнялись."
+                   + ("" if page.complete else " Страница получена не целиком.") + moved)
+    emit(add_web_record(case, args, result, limits_text, page.sha256))
+    return exit_code(status)
+
+
 def cmd_add_web(args, limits: dict) -> int:
     case = Case(args.case)
     if not is_http_url(args.url):
@@ -371,28 +444,12 @@ def cmd_add_web(args, limits: dict) -> int:
     if args.unavailable:
         status = "unavailable"
     else:
+        check_sources_limit(case)
         text = read_incoming(case, args.text_file, limits)
         blocks = numbered(text_blocks(text, markdown=True))
         status = ("ok" if args.complete == "yes" else "partial") if blocks else "empty"
     result = Extraction(status, blocks, {"type": "web", "status": status, "blocks": len(blocks)})
-    source_id = case.next_id()
-    stamp = now()
-    extraction = {"status": status, "complete": result.complete, "limits": args.limits}
-    case.records.append({
-        "id": source_id,
-        "created_at": stamp,
-        "record_status": "active",
-        "type": "web",
-        "title": args.title,
-        "location": {"url": args.url},
-        "origin": "public_web",
-        "allowed": True,
-        "retrieved_at": stamp,
-        "sha256": None,
-        "extraction": extraction,
-    })
-    commit_new(case, source_id, result, None)
-    report = {"id": source_id, "blocks": len(blocks)} | extraction
+    report = add_web_record(case, args, result, args.limits, None)
     if args.text_file:
         try:
             args.text_file.unlink()
@@ -531,6 +588,11 @@ def build_parser() -> Parser:
     web.add_argument("--complete", choices=["yes", "no"])
     web.add_argument("--unavailable", action="store_true")
     web.set_defaults(run=cmd_add_web)
+    fetched = commands.add_parser("fetch-web")
+    fetched.add_argument("case", type=Path)
+    fetched.add_argument("--url", required=True)
+    fetched.add_argument("--title", required=True)
+    fetched.set_defaults(run=cmd_fetch_web)
 
     show = commands.add_parser("show")
     show.add_argument("case", type=Path)

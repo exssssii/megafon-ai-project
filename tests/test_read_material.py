@@ -14,8 +14,10 @@ import zipfile
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
+import checkpoint  # noqa: E402
 import material_extract  # noqa: E402
 import read_material  # noqa: E402
+import validate_project  # noqa: E402
 
 from docx import Document  # noqa: E402
 from docx.oxml import parse_xml  # noqa: E402
@@ -634,6 +636,70 @@ class Registry(Base):
         (self.case / "evidence" / "sources.json").write_text('{"format_version": 9, "records": []}', encoding="utf-8")
         code, _, _ = self.add(self.write("a.md", "текст"))
         self.assertEqual(code, REFUSED)
+
+
+class Fetched(Base):
+    URL = "https://example.com/p"
+
+    PAGE = read_material.Page("# Цены\n\nТариф ВЕБ-1.\n", "a" * 64, True, URL)
+
+    def setUp(self):
+        super().setUp()
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(checkpoint.main(["action", "start", str(self.case), "--kind", "web_read", "--tool", "fetch-web",
+                                              "--environment", "claude_code"]), 0)
+
+    def fetch(self, page=None, error=None):
+        with mock.patch.object(read_material, "fetch_page", return_value=page, side_effect=error) as self.fetcher:
+            return self.run_tool("fetch-web", self.case, "--url", self.URL, "--title", "Страница")
+
+    def brief(self, text):
+        (self.case / "brief.md").write_text(f"# Бриф\n\n## Бюджет исследования\n\n{text}\n", encoding="utf-8")
+
+    def test_page_is_stored_with_the_fingerprint_of_the_download(self):
+        code, report, _ = self.fetch(self.PAGE)
+        self.assertEqual((code, report["status"], report["complete"]), (OK, "ok", True))
+        record = self.sources()[0]
+        self.assertEqual((record["sha256"], record["location"]), ("a" * 64, {"url": self.URL}))
+        self.assertIn("без модели", record["extraction"]["limits"])
+        self.assertEqual(validate_project.validate_case(self.case).errors, [])
+
+    def test_same_page_is_not_downloaded_twice(self):
+        first = self.fetch(self.PAGE)[1]["id"]
+        code, report, _ = self.fetch(self.PAGE)
+        self.assertEqual((code, report["id"], report["existing"]), (OK, first, True))
+        self.fetcher.assert_not_called()
+        self.assertEqual(len(self.sources()), 1)
+
+    def test_read_without_an_action_is_refused(self):
+        (self.case / "state" / "actions.jsonl").unlink()
+        code, report, _ = self.fetch(self.PAGE)
+        self.assertEqual((code, report["refused"]), (REFUSED, "action_missing"))
+        self.fetcher.assert_not_called()
+
+    def test_pages_that_did_not_open_spend_no_limit(self):
+        self.brief("1 поиск, 1 чтение страницы, 1 источник")
+        self.run_tool("add-web", self.case, "--url", "https://example.com/gone", "--title", "Нет",
+                      "--limits", "Не открылась.", "--unavailable")
+        self.assertEqual(self.fetch(self.PAGE)[0], OK)
+
+    def test_failure_writes_nothing_and_names_the_reason(self):
+        code, report, _ = self.fetch(error=read_material.FetchError("http_error", 404))
+        self.assertEqual((code, report["fetch_error"], report["http_status"]), (REFUSED, "http_error", 404))
+        self.assertFalse((self.case / "evidence" / "sources.json").exists())
+
+    def test_limit_of_sources_stops_the_page_before_the_network(self):
+        self.brief("1 поиск, 1 чтение страницы, 0 источников")
+        with mock.patch.object(read_material, "fetch_page") as fetch:
+            code, report, _ = self.run_tool("fetch-web", self.case, "--url", self.URL, "--title", "Страница")
+        self.assertEqual((code, report["refused"]), (REFUSED, "budget_exhausted"))
+        fetch.assert_not_called()
+
+    def test_page_that_did_not_open_is_recorded_past_the_limit(self):
+        self.brief("1 поиск, 1 чтение страницы, 0 источников")
+        code, _, _ = self.run_tool("add-web", self.case, "--url", self.URL, "--title", "Страница",
+                                   "--limits", "Не открылась.", "--unavailable")
+        self.assertNotEqual(code, REFUSED)
 
 
 class Web(Base):

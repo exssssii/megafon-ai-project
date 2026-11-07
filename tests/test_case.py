@@ -134,12 +134,21 @@ class Usage(ToolTestCase):
     def sources(self, *statuses):
         path = self.case / "evidence" / "sources.json"
         path.parent.mkdir(exist_ok=True)
-        records = [{"id": f"SRC-{n:04d}", "record_status": status} for n, status in enumerate(statuses, start=1)]
+        records = [{"id": f"SRC-{n:04d}", "record_status": status, "type": "web", "extraction": {"status": "ok"}}
+                   for n, status in enumerate(statuses, start=1)]
+        records.append({"id": "SRC-9000", "record_status": "active", "type": "md", "extraction": {"status": "ok"}})
+        records.append({"id": "SRC-9001", "record_status": "active", "type": "web", "extraction": {"status": "unavailable"}})
         path.write_text(json.dumps({"format_version": 1, "records": records}), encoding="utf-8")
 
     def test_usage_empty_case(self):
         self.assertEqual(self.run_tool("usage", self.case),
-                         (0, {"status": "ok", "searches": 0, "web_reads": 0, "sources": 0}))
+                         (0, {"status": "ok", "searches": 0, "web_reads": 0, "sources": 0, "limits": None}))
+
+    def test_usage_shows_the_limits_of_the_brief(self):
+        (self.case / "brief.md").write_text("# Бриф\n\n## Бюджет исследования\n\n"
+                                            "8 поисковых запросов, 20 чтений страниц, 12 источников\n", encoding="utf-8")
+        self.assertEqual(self.run_tool("usage", self.case)[1]["limits"],
+                         {"searches": 8, "web_reads": 20, "sources": 12})
 
     def test_usage_counts_every_attempt(self):
         self.journal("search", "web_read", "search", "web_read", "web_read", "model", "file_read", "human_input")

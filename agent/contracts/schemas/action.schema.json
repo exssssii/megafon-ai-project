@@ -193,6 +193,9 @@
         "at": {
           "$ref": "urn:strategy-agent:contracts:common#/$defs/datetime"
         },
+        "interrupted": {
+          "const": true
+        },
         "human": {
           "type": "object",
           "additionalProperties": false,

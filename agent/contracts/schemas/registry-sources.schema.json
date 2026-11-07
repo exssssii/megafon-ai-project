@@ -168,7 +168,10 @@
       "else": {
         "properties": {
           "sha256": {
-            "type": "null"
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       }

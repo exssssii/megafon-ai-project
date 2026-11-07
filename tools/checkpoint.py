@@ -49,6 +49,12 @@ TORN_ID_RE = re.compile(rb'"id"\s*:\s*"ACT-([0-9]{4,})"')
 DECISION_ID_RE = re.compile(r"DEC-[0-9]{4,}")
 CKP_NUMBER_RE = re.compile(r"CKP-([0-9]{4,})")
 SNAPSHOTS = "state/snapshots"
+BRIEF = "brief.md"
+BUDGET_SECTION_RE = re.compile(r"^## Бюджет исследования[ \t]*\n(.*?)(?=^#{1,6} |\Z)", re.M | re.S)
+BUDGET_WORDS = {"searches": "(?:поиск|запрос)", "web_reads": "(?:чтени|страниц)", "sources": "источник"}
+BUDGET_RES = {key: re.compile(rf"(\d+)[^\S\n]+{stem}\w*|{stem}\w*(?:[^\S\n]+\w+)*?[^\S\n]*[:—–|-][^\S\n]*(\d+)", re.I)
+              for key, stem in BUDGET_WORDS.items()}
+BUDGET_KINDS = {"search": "searches", "web_read": "web_reads"}
 STAGES = ["intake", "research", "options", "decision", "strategies", "validation_plan", "done"]
 REQUEST_KEYS = {"goal", "stage", "open_items", "next_step"}
 
@@ -329,6 +335,57 @@ def unique(values: list[str] | None) -> list[str]:
     return list(dict.fromkeys(values or []))
 
 
+def research_budget(root: Path) -> dict | None:
+    """Limits from the brief, None for one it does not name once. None as a whole until the brief has sections."""
+    try:
+        text = (root / BRIEF).read_bytes().decode("utf-8-sig").replace("\r\n", "\n")
+    except FileNotFoundError:
+        return None
+    except (OSError, UnicodeDecodeError):
+        raise Refused("budget_unreadable", "бриф не читается: бюджет исследования неизвестен") from None
+    section = BUDGET_SECTION_RE.search(text)
+    if section is None and not re.search(r"^## ", text, re.M):
+        return None
+    limits = {}
+    for key, pattern in BUDGET_RES.items():
+        values = {int(one or other) for one, other in pattern.findall(section.group(1))} if section else set()
+        limits[key] = values.pop() if len(values) == 1 else None
+    return limits
+
+
+def budget_used(lines: list[dict], kind: str) -> int:
+    return sum(isinstance(line, dict) and line.get("phase") == "start" and line.get("kind") == kind for line in lines)
+
+
+def has_open_action(lines: list[dict], kind: str) -> bool:
+    return any(entry["start"] is not None and entry["end"] is None and entry["start"].get("kind") == kind
+               for entry in action_outcomes(lines).values())
+
+
+def web_sources_used(records: list[dict]) -> int:
+    """Pages with text: a page that did not open stays visible and spends nothing, user files are not research."""
+    return sum(record.get("record_status") == "active" and record.get("type") == "web"
+               and record.get("extraction", {}).get("status") in ("ok", "partial") for record in records)
+
+
+def check_budget(root: Path, lines: list[dict], kind: str, retry_of: str | None) -> None:
+    """Stop a recorded search or page read past the limit: the limit of the brief is also the limit of the journal.
+
+    A retry of an action with no known outcome passes: without it the case cannot be finished.
+    """
+    if kind not in BUDGET_KINDS or retry_of in unfinished_actions(action_outcomes(lines)):
+        return
+    limits = research_budget(root)
+    if limits is None:
+        return
+    limit, used = limits[BUDGET_KINDS[kind]], budget_used(lines, kind)
+    if limit is None:
+        raise Refused("budget_unreadable", "в разделе «Бюджет исследования» брифа нет одного числа для этого действия: "
+                                           "оставь там только нынешние лимиты цифрами")
+    if used >= limit:
+        raise Refused("budget_exhausted", "лимит брифа исчерпан: действие не записано", used=used, limit=limit)
+
+
 def cmd_action_start(args) -> int:
     root = open_case(args.case)
     version = case_version(root)
@@ -348,6 +405,7 @@ def cmd_action_start(args) -> int:
     elif repeat:
         raise Refused("repeat", "такое действие уже записано: проверь его исход или повтори с --retry-of и причиной",
                       repeat_of=repeat)
+    check_budget(root, lines, args.kind, args.retry_of)
     action_id = next_id(root)
     line = start_line(version, action_id, args, args.kind, input_refs)
     runtime = runtime_of(args)
@@ -384,6 +442,8 @@ def cmd_action_end(args) -> int:
         raise Refused("already_ended", "у действия уже записан конец: исход меняется только новым действием с --retry-of",
                       id=args.id)
     line = end_line(version, args.id, args.outcome, unique(args.result_ref), load_cost(args.cost_file))
+    if args.interrupted:
+        line["interrupted"] = True
     check_lines([line])
     check_references(root, read_journal(root), line["result_refs"])
     append_lines(root, [line])
@@ -1046,6 +1106,7 @@ def build_parser() -> Parser:
     end.add_argument("--outcome", required=True, choices=OUTCOMES)
     end.add_argument("--result-ref", action="append")
     end.add_argument("--cost-file", type=Path)
+    end.add_argument("--interrupted", action="store_true")
     end.set_defaults(run=cmd_action_end)
 
     human = steps.add_parser("human")

@@ -71,9 +71,16 @@ class Time(unittest.TestCase):
         self.assertEqual((time["started_at"], time["elapsed_seconds"], time["time_to_first_result_seconds"]),
                          ("2026-11-06T10:00:00+03:00", 40 * 60, 30 * 60))
 
-    def test_clock_runs_to_a_result_written_after_the_journal(self):
-        time = ac.summarize(act("ACT-0001", "search", 0, 10), [option("OPT-0001", 30)])["time"]
-        self.assertEqual((time["elapsed_seconds"], time["time_to_first_result_seconds"]), (30 * 60, 30 * 60))
+    def test_time_written_by_the_agent_does_not_move_the_clock(self):
+        time = ac.summarize(act("ACT-0001", "search", 0, 10), [option("OPT-0001", 500)])["time"]
+        self.assertEqual((time["elapsed_seconds"], time["working_seconds"]), (10 * 60, 10 * 60))
+
+    def test_interrupted_action_does_not_hide_a_break(self):
+        lines = act("ACT-0001", "model", 0, 100)
+        lines[-1]["interrupted"] = True
+        summary = ac.summarize(lines, [])
+        self.assertEqual([pause["seconds"] for pause in summary["time"]["pauses"]], [100 * 60])
+        self.assertNotIn("LONG_ACTION_COUNTED", summary["warnings"])
 
     def test_a_long_step_is_not_a_pause(self):
         lines = act("ACT-0001", "model", 0, 40) + act("ACT-0002", "save", 41, 42)
@@ -101,6 +108,51 @@ class Time(unittest.TestCase):
         summary = ac.summarize(act("ACT-0001", "model", 30, 40), [option("OPT-0001", 10)])
         self.assertEqual(summary["time"]["time_to_first_result_seconds"], 0)
         self.assertIn("FIRST_RESULT_BEFORE_JOURNAL", summary["warnings"])
+
+    def test_first_result_is_the_stamp_of_the_action_that_wrote_it(self):
+        lines = act("ACT-0001", "model", 10, 40, refs=["OPT-0001", "OPT-0002"]) + act("ACT-0002", "save", 41, 50)
+        summary = ac.summarize(lines, [option("OPT-0001", 1), option("OPT-0002", 2)])
+        self.assertEqual((summary["time"]["first_result"], summary["time"]["time_to_first_result_seconds"]),
+                         ("OPT-0001", 30 * 60))
+        self.assertNotIn("FIRST_RESULT_UNSTAMPED", summary["warnings"])
+
+    def test_withdrawn_option_in_an_action_does_not_count(self):
+        lines = act("ACT-0001", "model", 0, 10, refs=["OPT-0001"]) + act("ACT-0002", "model", 11, 20, refs=["OPT-0002"])
+        summary = ac.summarize(lines, [option("OPT-0001", 5, "withdrawn"), option("OPT-0002", 15)])
+        self.assertEqual((summary["time"]["first_result"], summary["time"]["time_to_first_result_seconds"]),
+                         ("OPT-0002", 20 * 60))
+
+    def test_only_a_finished_step_of_the_agent_stamps_the_result(self):
+        for lines in (act("ACT-0001", "model", 10, 100, outcome="failed", refs=["OPT-0001"]),
+                      act("ACT-0001", "model", 10, 100, outcome="unknown", refs=["OPT-0001"]),
+                      act("ACT-0001", "human_input", 10, 100, refs=["OPT-0001"], human={"help": "answer"})):
+            summary = ac.summarize(lines, [option("OPT-0001", 20)])
+            self.assertEqual(summary["time"]["time_to_first_result_seconds"], 10 * 60)
+            self.assertIn("FIRST_RESULT_UNSTAMPED", summary["warnings"])
+
+    def test_earlier_option_no_action_names_keeps_the_written_time(self):
+        lines = act("ACT-0001", "model", 10, 100, refs=["OPT-0002"])
+        summary = ac.summarize(lines, [option("OPT-0001", 20), option("OPT-0002", 90)])
+        self.assertEqual((summary["time"]["first_result"], summary["time"]["time_to_first_result_seconds"]),
+                         ("OPT-0001", 10 * 60))
+        self.assertIn("FIRST_RESULT_UNSTAMPED", summary["warnings"])
+
+    def test_time_the_agent_wrote_is_marked_in_the_report(self):
+        summary = ac.summarize(act("ACT-0001", "model", 0, 40), [option("OPT-0001", 30)])
+        self.assertEqual(summary["time"]["time_to_first_result_seconds"], 30 * 60)
+        self.assertIn("FIRST_RESULT_UNSTAMPED", summary["warnings"])
+        self.assertIn("взято из записи агента", ac.render("c", summary))
+
+    def test_action_closed_as_unknown_does_not_hide_a_break(self):
+        lines = act("ACT-0001", "model", 0, 100, outcome="unknown") + act("ACT-0002", "model", 5, 10)
+        time = ac.summarize(lines, [])["time"]
+        self.assertEqual([pause["seconds"] for pause in time["pauses"]], [90 * 60])
+
+    def test_long_finished_action_is_named_in_the_report(self):
+        summary = ac.summarize(act("ACT-0001", "model", 0, 40), [])
+        self.assertEqual(summary["time"]["pauses"], [])
+        self.assertIn("LONG_ACTION_COUNTED", summary["warnings"])
+        self.assertIn("время завышено", ac.render("c", summary))
 
     def test_long_pause_is_excluded_from_working_time_only(self):
         lines = act("ACT-0001", "model", 0, 10) + act("ACT-0002", "model", 100, 110)

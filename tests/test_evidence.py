@@ -754,6 +754,16 @@ class Navigation(unittest.TestCase):
         self.assertEqual([item["same_address_as"] for item in marked], [["SRC-0005"], ["SRC-0003"]])
         self.assertIn("same_address", report["warnings"])
 
+    def test_page_saved_by_the_agent_is_marked(self):
+        self.assertIn("source_via_model", self.pages("trace", self.case, "CLM-0007")[0]["warnings"])
+
+        def downloaded(data):
+            for record in data["records"]:
+                if record["type"] == "web":
+                    record["sha256"] = "a" * 64
+        self.rewrite(SOURCES, downloaded)
+        self.assertNotIn("source_via_model", self.pages("trace", self.case, "CLM-0007")[0]["warnings"])
+
     def test_a_loop_in_derived_from_ends(self):
         def loop(data):
             data["records"][5]["derived_from"] = ["CLM-0002", "CLM-0006", "CALC-0001"]

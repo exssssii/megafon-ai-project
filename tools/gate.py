@@ -27,6 +27,9 @@ ACCOUNTING_REPORT = "outputs/accounting.md"
 STAGES = ("research", "options", "decision", "strategies", "validation_plan", "done")
 PRELIMINARY_STAGES = ("strategies", "validation_plan")
 ASSUMPTION = "(допущение)"
+BRIEF = "brief.md"
+BRIEF_REF = "[бриф]"
+USER_WORDS_SECTION = "Слова пользователя"
 
 OPTIONS = "outputs/options.md"
 PRODUCT = "outputs/product-strategy.md"
@@ -238,7 +241,28 @@ def matches_record(quantity: dict, number) -> bool:
     return False
 
 
-def check_numbers(result, file, lines, index, record_id=None, shared_refs=()):
+def user_numbers(root: Path) -> list:
+    """Numbers the user named: a limit or a budget from the brief has no CLM behind it and needs none."""
+    try:
+        lines = read_output(root, BRIEF) or []
+    except UnicodeDecodeError:
+        return []
+    body = split_sections(lines).get(USER_WORDS_SECTION, [])
+    numbers = []
+    for _, line in body:
+        try:
+            numbers += [(abs(item["value"]) * item["scale"], item["percent"]) for item in quantities(line)]
+        except CalcError:
+            continue
+    return numbers
+
+
+def said_by_user(quantity: dict, user_said) -> bool:
+    """Exact, with the unit: unlike a record, a quotation holds numbers about anything."""
+    return (abs(quantity["value"]) * quantity["scale"], quantity["percent"]) in user_said
+
+
+def check_numbers(result, file, lines, index, record_id=None, shared_refs=(), user_said=()):
     for number, line in lines:
         if HEADING_RE.match(line) or is_status_line(line):
             continue
@@ -250,14 +274,15 @@ def check_numbers(result, file, lines, index, record_id=None, shared_refs=()):
         if not found:
             continue
         linked = [ref for ref in [*references(line), *shared_refs] if prefix_of(ref) in ("CLM", "CALC")]
-        if not linked:
+        from_user = user_said if BRIEF_REF in line else ()
+        if not linked and BRIEF_REF not in line:
             result.problem("NUMBER_UNLINKED", file, record_id, "a number without a CLM or CALC link", number)
             continue
         known = [value for ref in linked for value in record_numbers(ref, index)]
         for quantity in found:
-            if not any(matches_record(quantity, value) for value in known):
+            if not any(matches_record(quantity, value) for value in known) and not said_by_user(quantity, from_user):
                 result.problem("NUMBER_MISMATCH", file, record_id,
-                               f"{quantity['value']} is not in {', '.join(dict.fromkeys(linked))}", number)
+                               f"{quantity['value']} is not in {', '.join(dict.fromkeys(linked)) or 'the brief'}", number)
 
 
 # --- stage checks ----------------------------------------------------------
@@ -266,6 +291,7 @@ class Gate:
     def __init__(self, root: Path, validator: Validator, stage: str, preliminary: bool, result: Result):
         self.root, self.stage, self.preliminary, self.result = root, stage, preliminary, result
         self.index = validator.index
+        self.user_said = user_numbers(root)
         self.questions = [r for r in validator.registries["Q"] if is_active(r["id"], r)]
         self.options = [r for r in validator.registries["OPT"] if is_active(r["id"], r)]
         self.decisions = [r for r in validator.registries["DEC"] if is_active(r["id"], r)]
@@ -339,7 +365,7 @@ class Gate:
         for option in self.options:
             if option["id"] not in table:
                 result.problem("OPTIONS_TABLE", OPTIONS, option["id"], "the option is not in the comparison table")
-        check_numbers(result, OPTIONS, list(enumerate(lines, 1)), self.index)
+        check_numbers(result, OPTIONS, list(enumerate(lines, 1)), self.index, user_said=self.user_said)
 
     def check_option_fields(self, option):
         empty = [name for name in OPTION_TEXT_FIELDS if not option[name].strip()]
@@ -348,7 +374,7 @@ class Gate:
         if empty:
             self.result.problem("OPTION_FIELD_EMPTY", OPTION_REGISTRY, option["id"], ", ".join(empty))
         check_numbers(self.result, OPTION_REGISTRY, list(enumerate(option["economics"].splitlines(), 1)),
-                      self.index, option["id"], option["basis"])
+                      self.index, option["id"], option["basis"], self.user_said)
 
     def check_decision(self):
         if self.preliminary:
@@ -416,11 +442,11 @@ class Gate:
         if lines is None:
             return
         self.check_status(file, lines)
-        check_numbers(self.result, file, list(enumerate(lines, 1)), self.index)
+        check_numbers(self.result, file, list(enumerate(lines, 1)), self.index, user_said=self.user_said)
         sections = split_sections(lines)
         for name in LINKED_SECTIONS.get(file, ()):
             body = sections.get(name, [])
-            if body and not any(references(line) or ASSUMPTION in line for _, line in body):
+            if body and not any(references(line) or ASSUMPTION in line or BRIEF_REF in line for _, line in body):
                 self.result.problem("SECTION_UNLINKED", file, None, f"section «{name}» has no link")
 
     def check_status(self, file, lines):
