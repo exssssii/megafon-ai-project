@@ -151,6 +151,18 @@ class BriefApproval(EmptyCaseTestCase):
                          [{"id": "DEC-0001", "topic": "brief", "user_statement": "Да, всё верно"}])
 
 
+class DelegatedChoice(EmptyCaseTestCase):
+    def test_resume_tells_a_choice_left_to_the_agent(self):
+        choice = {"option_id": "OPT-0001", "user_statement": "Реши сам", "chosen_at": "2026-11-06T10:00:00+03:00",
+                  "action_id": "ACT-0002"}
+        write_json(self.case / "decisions" / "decisions.json", {"format_version": 1, "records": [
+            {"id": "DEC-0001", "topic": "direction", "choice": {**choice, "delegated": True}},
+            {"id": "DEC-0002", "topic": "direction", "choice": choice}]})
+        self.assertEqual(ck.describe_choices(self.case, ["DEC-0001", "DEC-0002"]), [
+            {"id": "DEC-0001", "topic": "direction", "user_statement": "Реши сам", "delegated": True},
+            {"id": "DEC-0002", "topic": "direction", "user_statement": "Реши сам"}])
+
+
 class Interrupted(EmptyCaseTestCase):
     def test_flag_is_written_and_passes_the_contract(self):
         self.start()
@@ -161,6 +173,28 @@ class Interrupted(EmptyCaseTestCase):
         self.assertEqual(len(accounting.summarize(lines, [])["time"]["pauses"]), 1)
         self.assertEqual(run("action", "start", self.case, "--kind", "model", "--tool", "other",
                              "--environment", "claude_code")[0], 0)
+
+
+class EnvironmentName(EmptyCaseTestCase):
+    def test_any_short_name_is_recorded_and_passes_the_contract(self):
+        for name in ("cursor", "claude_code", "open_code2"):
+            code, action = run("action", "start", self.case, "--kind", "model", "--tool", "t", "--environment", name)
+            self.assertEqual(code, 0, action)
+            self.assertEqual(self.end(action["id"])[0], 0)
+        code, _ = run("action", "human", self.case, "--tool", "chat", "--environment", "windsurf",
+                      "--help-kind", "answer")
+        self.assertEqual(code, 0)
+        self.assertEqual([line["environment"] for line in journal_lines(self.case) if line["phase"] == "start"],
+                         ["cursor", "claude_code", "open_code2", "windsurf"])
+        self.assertEqual(vp.validate_case(self.case).errors, [])
+
+    def test_a_malformed_name_is_refused_without_a_record(self):
+        for name in ("Cursor", "cursor\n", "", "1cursor", "cur-sor", "c" * 33):
+            with self.subTest(name=name):
+                code, result = run("action", "start", self.case, "--kind", "model", "--tool", "t",
+                                   "--environment", name)
+                self.assertEqual((code, result["status"]), (2, "usage_error"))
+                self.assertFalse((self.case / "state" / "actions.jsonl").exists())
 
 
 class ResearchBudget(EmptyCaseTestCase):

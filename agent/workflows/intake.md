@@ -1,6 +1,6 @@
 # Первый контакт и постановка
 
-Процедура для Claude Code и Codex. Как отличить важный пробел от некритичного неизвестного — в [методике](../knowledge/problem-framing.md). Команды запускаются из корня папки, на Windows через `.venv/Scripts/python.exe`, в других системах через `.venv/bin/python`.
+Процедура общая для любой среды. Как отличить важный пробел от некритичного неизвестного — в [методике](../knowledge/problem-framing.md). Команды запускаются из корня папки, на Windows через `.venv/Scripts/python.exe`, в других системах через `.venv/bin/python`.
 
 ## Что делать с первой репликой
 
@@ -72,7 +72,7 @@ tools/case.py new --from <временный файл>
 
 Заверши просьбой утвердить бриф и блоком статуса из [`run-case.md`](run-case.md). Жди ответа: без утверждения нет поиска, чтения сайтов и вычислений по кейсу.
 
-Ответ на вопрос постановки запиши сразу, ещё до правки брифа: `tools/checkpoint.py action human projects/<case-id> --tool chat --environment <claude_code|codex> --help-kind answer --note 'Что уточнил'`. Если вместе с ответом пришёл файл или ссылка, вид помощи `material`.
+Ответ на вопрос постановки запиши сразу, ещё до правки брифа: `tools/checkpoint.py action human projects/<case-id> --tool chat --environment <среда> --help-kind answer --note 'Что уточнил'`. Если вместе с ответом пришёл файл или ссылка, вид помощи `material`.
 
 ## Утверждение
 
@@ -82,7 +82,7 @@ tools/case.py new --from <временный файл>
 
 Запись утверждения, номер решения следующий свободный:
 
-1. `tools/checkpoint.py action human projects/<case-id> --tool chat --environment <claude_code|codex> --result-ref DEC-0001`
+1. `tools/checkpoint.py action human projects/<case-id> --tool chat --environment <среда> --result-ref DEC-0001`
 2. Сразу добавь запись в `decisions/decisions.json`:
 
 ```json

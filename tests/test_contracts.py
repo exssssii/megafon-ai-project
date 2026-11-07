@@ -505,6 +505,14 @@ class Mutating(CaseTestCase):
         shutil.rmtree(self.case)
         shutil.copytree(VALID, self.case)
 
+    def test_journal_environment_name(self):
+        for name, valid in (("cursor", True), ("open_code2", True), ("Cursor", False), ("cursor\n", False),
+                            ("c" * 33, False), ("1cursor", False)):
+            with self.subTest(name=name):
+                self.reset()
+                self.journal(lambda ls: self.line(ls, "ACT-0007", "start").update(environment=name))
+                self.assertEqual("SCHEMA" not in codes(self.run_case())[0], valid)
+
     def expect(self, errors=(), warnings=()):
         report = self.run_case()
         got_errors, got_warnings = codes(report)
@@ -577,6 +585,40 @@ class Robustness(Mutating):
 
         self.edit(DECISIONS, mutate)
         self.assertEqual(codes(self.run_case())[0], ["DECISION_CHOICE_STATE"])
+
+    def test_choice_left_to_the_agent_takes_the_proposed_option(self):
+        def delegate(option):
+            def mutate(d):
+                d["records"][1]["proposal"]["option_id"] = option
+                d["records"][1]["choice"]["delegated"] = True
+            return mutate
+
+        self.edit(DECISIONS, delegate("OPT-0001"))
+        self.assertEqual(codes(self.run_case())[0], [])
+        self.edit(DECISIONS, delegate("OPT-0003"))
+        self.assertEqual(codes(self.run_case())[0], ["DECISION_CHOICE_STATE"])
+
+    def test_choice_left_to_the_agent_needs_an_earlier_proposal(self):
+        def no_proposal(d):
+            record = d["records"][1]
+            record["proposal"] = None
+            record["choice"]["delegated"] = True
+
+        self.edit(DECISIONS, no_proposal)
+        self.assertIn("DECISION_CHOICE_STATE", codes(self.run_case())[0])
+
+    def test_choice_left_to_the_agent_before_the_proposal_is_error(self):
+        def reorder(d):
+            record = d["records"][1]
+            record["proposal"]["option_id"] = "OPT-0001"
+            record["choice"].update(delegated=True, action_id="ACT-0004")
+
+        self.edit(DECISIONS, reorder)
+        self.assertIn("DECISION_CHOICE_STATE", codes(self.run_case())[0])
+
+    def test_delegated_is_true_or_absent(self):
+        self.edit(DECISIONS, lambda d: d["records"][1]["choice"].update(delegated=False))
+        self.assertIn("SCHEMA", codes(self.run_case())[0])
 
     def test_proposal_option_stays_required(self):
         def mutate(d):

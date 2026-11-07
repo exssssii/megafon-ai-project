@@ -63,6 +63,9 @@
         },
         "action_id": {
           "$ref": "urn:strategy-agent:contracts:common#/$defs/any_id"
+        },
+        "delegated": {
+          "const": true
         }
       }
     },

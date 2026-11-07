@@ -41,7 +41,7 @@ from validate_project import (
 
 EXIT_OK, EXIT_REFUSED, EXIT_USAGE, EXIT_INTERNAL = 0, 1, 2, 3
 KINDS = ["model", "search", "web_read", "file_read", "compute", "save", "human_input"]
-ENVIRONMENTS = ["claude_code", "codex"]
+ENVIRONMENT_RE = re.compile(r"[a-z][a-z0-9_]{0,31}")
 OUTCOMES = ["completed", "failed", "unknown"]
 HELP_KINDS = ["choice", "answer", "material", "workaround"]
 MAX_ACTIVE_MINUTES = 60 * 24 * 365
@@ -818,7 +818,10 @@ def describe_choices(root: Path, ids: list[str]) -> list[dict]:
     for decision_id in ids:
         record = by_id.get(decision_id) or {}
         choice = record.get("choice") if isinstance(record.get("choice"), dict) else {}
-        result.append({"id": decision_id, "topic": record.get("topic"), "user_statement": choice.get("user_statement")})
+        item = {"id": decision_id, "topic": record.get("topic"), "user_statement": choice.get("user_statement")}
+        if choice.get("delegated") is True:
+            item["delegated"] = True
+        result.append(item)
     return result
 
 
@@ -1079,6 +1082,14 @@ def cmd_restore(args) -> int:
 
 # --- command line ----------------------------------------------------------
 
+def environment_name(value: str) -> str:
+    """Any environment the agent runs in: a short lower-case name such as claude_code, codex or cursor."""
+    if not ENVIRONMENT_RE.fullmatch(value):
+        raise argparse.ArgumentTypeError(
+            f"{value!r}: имя среды — строчные латинские буквы, цифры и _, с буквы, до 32 знаков, например cursor")
+    return value
+
+
 def build_parser() -> Parser:
     parser = Parser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest="command", required=True, parser_class=Parser)
@@ -1090,7 +1101,7 @@ def build_parser() -> Parser:
     start.add_argument("case", type=Path)
     start.add_argument("--kind", required=True, choices=KINDS)
     start.add_argument("--tool", required=True)
-    start.add_argument("--environment", required=True, choices=ENVIRONMENTS)
+    start.add_argument("--environment", required=True, type=environment_name)
     start.add_argument("--model")
     start.add_argument("--input-ref", action="append")
     start.add_argument("--retry-of")
@@ -1112,7 +1123,7 @@ def build_parser() -> Parser:
     human = steps.add_parser("human")
     human.add_argument("case", type=Path)
     human.add_argument("--tool", required=True)
-    human.add_argument("--environment", required=True, choices=ENVIRONMENTS)
+    human.add_argument("--environment", required=True, type=environment_name)
     human.add_argument("--model")
     human.add_argument("--result-ref", action="append")
     human.add_argument("--help-kind", choices=HELP_KINDS, default="choice")

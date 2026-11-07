@@ -843,6 +843,11 @@ class Validator:
             self.error("DECISION_CHOICE_STATE", file, did, "proposed without a proposal")
         if choice is not None and choice["option_id"] is None and decision["topic"] == "direction":
             self.error("DECISION_CHOICE_STATE", file, did, "a direction choice names no option")
+        if choice is not None and choice.get("delegated") and (
+                proposal is None or proposal["option_id"] is None or choice["option_id"] != proposal["option_id"]):
+            self.error("DECISION_CHOICE_STATE", file, did, "a choice left to the agent must take the proposed option")
+        elif choice is not None and choice.get("delegated") and not self.proposal_came_first(proposal, choice):
+            self.error("DECISION_CHOICE_STATE", file, did, "a choice left to the agent comes before the proposal it takes")
         weak = []
         for part in (proposal, choice):
             if part is None or part["option_id"] is None:
@@ -863,6 +868,19 @@ class Validator:
             action = self.ref(choice["action_id"], {"ACT"}, file, did)
             if action is not None and not self.is_human_input_for(action, did):
                 self.error("DECISION_NOT_HUMAN", file, did, "choice.action_id is not a completed human_input for this decision")
+
+    def proposal_came_first(self, proposal, choice):
+        """A choice left to the agent takes a recommendation the person had already been shown.
+
+        The model action of the proposal must end in the journal before the person's action starts,
+        so a proposal written after "decide yourself" cannot pass as the one the person delegated to.
+        """
+        made = self.index.get(proposal["action_id"]) if isinstance(proposal.get("action_id"), str) else None
+        asked = self.index.get(choice["action_id"]) if isinstance(choice.get("action_id"), str) else None
+        if not isinstance(made, dict) or not isinstance(asked, dict) or made.get("end") is None or asked.get("start") is None:
+            return False
+        lines = [id(line) for line in self.journal]
+        return lines.index(id(made["end"])) < lines.index(id(asked["start"]))
 
     @staticmethod
     def action_kind(action):

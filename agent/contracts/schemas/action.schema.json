@@ -80,10 +80,7 @@
           "$ref": "urn:strategy-agent:contracts:common#/$defs/text"
         },
         "environment": {
-          "enum": [
-            "claude_code",
-            "codex"
-          ]
+          "$ref": "urn:strategy-agent:contracts:common#/$defs/environment"
         },
         "model": {
           "$ref": "urn:strategy-agent:contracts:common#/$defs/nullable_text"

@@ -30,6 +30,10 @@
       "type": "string",
       "pattern": "^[a-z][a-z0-9_]*$"
     },
+    "environment": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,31}$"
+    },
     "sha256": {
       "type": "string",
       "pattern": "^[0-9a-f]{64}$"
