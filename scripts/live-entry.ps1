@@ -44,6 +44,9 @@ if ($Case -ne 'retention-smb' -and -not ($hardRun -or $Suite -eq 'continue')) { 
 if ($Handoff) { $Handoff = (Resolve-Path -LiteralPath $Handoff).Path }
 if (-not $Work) { $Work = Join-Path (Split-Path -Parent $repo) $(switch ($Suite) { 'entry' { 'b07-live' } 'strategy' { 'b08-live' } 'e2e' { "b09-live-$Environment" } 'continue' { "b09-continue-$Environment-$Case" } 'hard' { "b11-live-$Environment-$Case" } 'faults' { "b11-faults-$Environment-$Case" } 'finish' { "b11-finish-$Environment-$Case" } }) }
 $Work = [IO.Path]::GetFullPath($Work)
+# A path like C:folder is relative to the current folder, and a clone inside the
+# repository makes its working tree dirty for every later run.
+if ("$Work\".StartsWith("$repo\", [StringComparison]::OrdinalIgnoreCase)) { throw "The work folder lies inside the repository: $Work. Pass -Work with a full path outside it, for example C:\b12-live" }
 if ($Work -match '[^\x00-\x7F]') { throw "Path has non-ASCII characters, .venv breaks there: $Work. Pass -Work with an ASCII path, for example D:\b07-live" }
 if (-not $Model) { $Model = if ($Environment -eq 'codex') { 'gpt-6.1-sol' } else { 'claude-sonnet-5-5' } }
 if (-not $Codex) {
