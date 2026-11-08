@@ -436,7 +436,17 @@ function Load-Handoff {
     $from = ([IO.File]::ReadAllText((Join-Path $unpacked 'commit.txt'), $utf8)).Trim()
     # A fix changes the commit: that is what these suites repeat the last steps for.
     if ($fromFinal) { Note-Check "archive_from $from" }
-    elseif ($from -ne $commit) { throw "The archive comes from $from, this run is on $commit. Switch to that commit." }
+    elseif ($from -ne $commit) {
+        # A folder carries over only while its format and the utilities that read it stay
+        # the same; text of the instructions may change in between.
+        $ErrorActionPreference = 'Continue'
+        git -C $repo cat-file -e "$from^{commit}" 2>$null
+        if ($LASTEXITCODE -ne 0) { throw "The archive comes from $from, which this repository does not have: fetch it first" }
+        $changed = @(git -C $repo diff --name-only $from $commit -- agent/contracts tools)
+        if ($LASTEXITCODE -ne 0) { throw "Could not compare $from with $commit" }
+        if ($changed.Count) { throw "The archive comes from $from, and the case format or utilities changed since: $($changed -join ', '). Run on $from." }
+        Note-Check "archive_from $from"
+    }
     Copy-Item -LiteralPath (Join-Path $unpacked $caseId) -Destination (Join-Path $clone 'projects') -Recurse
     if ($Suite -eq 'continue') { Copy-Item -LiteralPath (Join-Path $held 'saved-page.md') -Destination (Join-Path $clone 'inbox') }
     Copy-Item -LiteralPath $Handoff -Destination (Join-Path $results 'handoff-received.zip')
