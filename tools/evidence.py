@@ -49,6 +49,7 @@ CLAIMS_FILE = "evidence/claims.json"
 CALCULATIONS_FILE = "evidence/calculations.json"
 QUESTIONS_FILE = "research/questions.json"
 OPTIONS_FILE = "decisions/options.json"
+REVISION_LOG = "outputs/revisions.md"
 DECISIONS_FILE = "decisions/decisions.json"
 CLAIM_ID = re.compile(r"CLM-[0-9]{4,}")
 SOURCE_ID = re.compile(r"SRC-[0-9]{4,}")
@@ -621,11 +622,14 @@ class Graph:
         folder = case.root / "outputs"
         if folder.is_dir():
             for path in sorted(folder.rglob("*.md")):
+                relative = path.relative_to(case.root).as_posix()
+                if any(part.startswith(".") for part in path.relative_to(folder).parts) or relative == REVISION_LOG:
+                    continue  # old copies and the revision log are history, not texts to review
                 try:
                     text = path.read_bytes().decode("utf-8-sig")
                 except (UnicodeDecodeError, OSError):
                     continue
-                self.outputs[path.relative_to(case.root).as_posix()] = output_links(text)
+                self.outputs[relative] = output_links(text)
         self.reverse: dict[str, list[str]] = {}
         for node, targets in list(self.edges.items()) + list(self.outputs.items()):
             for target in targets:

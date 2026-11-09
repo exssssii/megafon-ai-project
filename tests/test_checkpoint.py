@@ -298,10 +298,10 @@ class ActionJournal(EmptyCaseTestCase):
         case = self.tmp / "demo-case"
         shutil.copytree(DEMO, case)
         code, result = run("action", "human", case, "--tool", "chat", "--environment", "codex", "--result-ref", "DEC-0002")
-        self.assertEqual((code, result["id"]), (0, "ACT-0010"))
+        self.assertEqual((code, result["id"]), (0, "ACT-0013"))
         start, end = journal_lines(case)[-2:]
-        self.assertEqual((start["kind"], start["input_refs"], start["id"]), ("human_input", [], "ACT-0010"))
-        self.assertEqual((end["outcome"], end["result_refs"], end["id"]), ("completed", ["DEC-0002"], "ACT-0010"))
+        self.assertEqual((start["kind"], start["input_refs"], start["id"]), ("human_input", [], "ACT-0013"))
+        self.assertEqual((end["outcome"], end["result_refs"], end["id"]), ("completed", ["DEC-0002"], "ACT-0013"))
         self.assertEqual(vp.validate_case(case).errors, [])
 
     def test_human_needs_a_decision_reference(self):
@@ -538,7 +538,8 @@ class SaveCheckpoint(DemoCaseTestCase):
         self.assertEqual((code, result["id"], result["seq"], result["previous"]), (0, "CKP-0003", 3, "CKP-0002"))
         document = self.checkpoint("CKP-0003")
         self.assertEqual(document["completed_actions"], ["ACT-0001", "ACT-0002", "ACT-0003", "ACT-0004",
-                                                         "ACT-0006", "ACT-0007", "ACT-0008", "ACT-0009"])
+                                                         "ACT-0006", "ACT-0007", "ACT-0008", "ACT-0009", "ACT-0010",
+                                                         "ACT-0011", "ACT-0012"])
         decisions = read_json(self.case / "decisions" / "decisions.json")["records"]
         self.assertEqual(document["human_choices"], [d["id"] for d in decisions if d["status"] == "chosen"])
         self.assertEqual(document["goal"], self.checkpoint("CKP-0002")["goal"])
@@ -653,9 +654,9 @@ class SaveCheckpoint(DemoCaseTestCase):
                              "--environment", "claude_code", "--input-ref", "SRC-0001")[0], 0)
         before = tree_hash(self.case)
         code, result = self.save(stage="done", next_step=None)
-        self.assertEqual((code, result["refused"], result["actions"]), (1, "unfinished_actions", ["ACT-0010"]))
+        self.assertEqual((code, result["refused"], result["actions"]), (1, "unfinished_actions", ["ACT-0013"]))
         self.assertEqual(tree_hash(self.case), before)
-        run("action", "end", self.case, "--id", "ACT-0010", "--outcome", "unknown")
+        run("action", "end", self.case, "--id", "ACT-0013", "--outcome", "unknown")
         self.assertEqual(self.save(stage="done", next_step=None)[1]["refused"], "unfinished_actions")
         self.assertEqual(self.save(stage="strategies")[0], 0)
 
@@ -851,7 +852,7 @@ class Resume(DemoCaseTestCase):
             self.assertEqual(result[key], document[key], key)
         self.assertEqual(result["human_choices"][0], {"id": "DEC-0001", "topic": "direction", "user_statement": "Развиваем сервис"})
         self.assertEqual([c["id"] for c in result["human_choices"]], document["human_choices"])
-        self.assertEqual(result["completed_actions"], {"count": 8, "last": document["completed_actions"][-5:]})
+        self.assertEqual(result["completed_actions"], {"count": 11, "last": document["completed_actions"][-5:]})
         self.assertEqual(result["changed"], [])
         self.assertIn("evidence/sources.json", result["new"])
         self.assertEqual((result["actions_after_checkpoint"], result["actions_unknown"], result["lost"], result["recovery"]),
@@ -880,15 +881,15 @@ class Resume(DemoCaseTestCase):
             "--input-ref", "SRC-0001")
         run("action", "start", self.case, "--kind", "web_read", "--tool", "WebFetch", "--environment", "codex",
             "--input-ref", "SRC-0002", "--input-ref", "SRC-0003")
-        run("action", "end", self.case, "--id", "ACT-0011", "--outcome", "unknown")
+        run("action", "end", self.case, "--id", "ACT-0014", "--outcome", "unknown")
         run("action", "start", self.case, "--kind", "compute", "--tool", "spreadsheet", "--environment", "codex",
             "--input-ref", "SRC-0002")
-        run("action", "end", self.case, "--id", "ACT-0012", "--outcome", "completed")
+        run("action", "end", self.case, "--id", "ACT-0015", "--outcome", "completed")
         result = self.resume()[1]
-        self.assertEqual(result["actions_after_checkpoint"], ["ACT-0012"])
+        self.assertEqual(result["actions_after_checkpoint"], ["ACT-0015"])
         self.assertEqual(result["actions_unknown"], [
-            {"id": "ACT-0010", "kind": "search", "tool": "WebSearch", "input_refs": ["SRC-0001"], "state": "no_end"},
-            {"id": "ACT-0011", "kind": "web_read", "tool": "WebFetch", "input_refs": ["SRC-0002", "SRC-0003"],
+            {"id": "ACT-0013", "kind": "search", "tool": "WebSearch", "input_refs": ["SRC-0001"], "state": "no_end"},
+            {"id": "ACT-0014", "kind": "web_read", "tool": "WebFetch", "input_refs": ["SRC-0002", "SRC-0003"],
              "state": "unknown"},
         ])
 
@@ -898,18 +899,18 @@ class Resume(DemoCaseTestCase):
             self.assertEqual(self.save()[0], 3)
         result = self.resume()[1]
         self.assertEqual((result["status"], result["id"]), ("ok", "CKP-0002"))
-        self.assertEqual([a["id"] for a in result["actions_unknown"]], ["ACT-0010"])
+        self.assertEqual([a["id"] for a in result["actions_unknown"]], ["ACT-0013"])
         self.assertEqual(self.save()[0], 0)
 
     def test_later_checkpoint_covers_earlier_actions(self):
         run("action", "start", self.case, "--kind", "compute", "--tool", "spreadsheet", "--environment", "codex",
             "--input-ref", "SRC-0002")
-        run("action", "end", self.case, "--id", "ACT-0010", "--outcome", "completed")
-        self.assertEqual(self.resume()[1]["actions_after_checkpoint"], ["ACT-0010"])
+        run("action", "end", self.case, "--id", "ACT-0013", "--outcome", "completed")
+        self.assertEqual(self.resume()[1]["actions_after_checkpoint"], ["ACT-0013"])
         self.save()
         result = self.resume()[1]
         self.assertEqual((result["actions_after_checkpoint"], result["completed_actions"]["last"][-1]),
-                         ([], "ACT-0010"))
+                         ([], "ACT-0013"))
 
     def test_journal_corrupted_in_the_middle_does_not_crash_resume(self):
         path = self.case / JOURNAL
@@ -977,7 +978,7 @@ class Restore(DemoCaseTestCase):
         self.assertEqual(result["recovery"][0]["checkpoint"], "CKP-0003")
         self.assertEqual(result["recovery"][0]["files"], [{"path": "decisions/decisions.json", "state": "changed", "snapshot": True}])
         self.assertTrue(result["recovery"][0]["recoverable"])
-        self.assertEqual([c["topic"] for c in result["human_choices"]], [None])
+        self.assertEqual([c["topic"] for c in result["human_choices"]], [None] * 4)
 
         before = tree_hash(self.case)
         code, result = self.restore("--checkpoint", "CKP-0003")
@@ -1111,7 +1112,7 @@ class MovedCase(unittest.TestCase):
         self.assertEqual(call("resume", case)[1]["status"], "ok")
         self.assertEqual(call("action", "start", case, "--kind", "search", "--tool", "WebSearch",
                               "--environment", "codex", "--input-ref", "SRC-0001")[0], 0)
-        self.assertEqual(call("action", "end", case, "--id", "ACT-0010", "--outcome", "completed")[0], 0)
+        self.assertEqual(call("action", "end", case, "--id", "ACT-0013", "--outcome", "completed")[0], 0)
         code, result = call("save", case, "--from", request)
         self.assertEqual((code, result["id"]), (0, "CKP-0003"))
         (case / "brief.md").write_text("x", encoding="utf-8")
@@ -1250,36 +1251,36 @@ class ResolvedActions(DemoCaseTestCase):
 
     def test_completed_retry_settles_an_unknown_action(self):
         self.start()
-        self.end("ACT-0010", "unknown")
+        self.end("ACT-0013", "unknown")
         self.assertEqual(self.save(stage="done", next_step=None)[1]["refused"], "unfinished_actions")
-        self.start("--retry-of", "ACT-0010", "--retry-reason", "проверка исхода")
+        self.start("--retry-of", "ACT-0013", "--retry-reason", "проверка исхода")
         self.assertEqual(self.save(stage="done", next_step=None)[1]["refused"], "unfinished_actions")
-        self.end("ACT-0011", "completed")
+        self.end("ACT-0014", "completed")
         result = run("resume", self.case)[1]
         self.assertEqual(result["actions_unknown"], [])
-        self.assertEqual(result["actions_resolved"], [{"id": "ACT-0010", "resolved_by": "ACT-0011"}])
+        self.assertEqual(result["actions_resolved"], [{"id": "ACT-0013", "resolved_by": "ACT-0014"}])
         code, result = self.save(stage="done", next_step=None)
         self.assertEqual(code, 0)
         self.assertEqual(self.checkpoint(result["id"])["stage"], "done")
 
     def test_failed_retry_does_not_settle(self):
         self.start()
-        self.end("ACT-0010", "unknown")
-        self.start("--retry-of", "ACT-0010", "--retry-reason", "проверка")
-        self.end("ACT-0011", "failed")
-        self.assertEqual([a["id"] for a in run("resume", self.case)[1]["actions_unknown"]], ["ACT-0010"])
-        self.assertEqual(self.save(stage="done", next_step=None)[1]["actions"], ["ACT-0010"])
+        self.end("ACT-0013", "unknown")
+        self.start("--retry-of", "ACT-0013", "--retry-reason", "проверка")
+        self.end("ACT-0014", "failed")
+        self.assertEqual([a["id"] for a in run("resume", self.case)[1]["actions_unknown"]], ["ACT-0013"])
+        self.assertEqual(self.save(stage="done", next_step=None)[1]["actions"], ["ACT-0013"])
 
     def test_resolution_follows_the_retry_chain(self):
         self.start()
-        self.end("ACT-0010", "unknown")
-        self.start("--retry-of", "ACT-0010", "--retry-reason", "первая проверка")
-        self.end("ACT-0011", "unknown")
-        self.start("--retry-of", "ACT-0011", "--retry-reason", "вторая проверка")
-        self.end("ACT-0012", "completed")
+        self.end("ACT-0013", "unknown")
+        self.start("--retry-of", "ACT-0013", "--retry-reason", "первая проверка")
+        self.end("ACT-0014", "unknown")
+        self.start("--retry-of", "ACT-0014", "--retry-reason", "вторая проверка")
+        self.end("ACT-0015", "completed")
         result = run("resume", self.case)[1]
         self.assertEqual(result["actions_unknown"], [])
-        self.assertEqual([item["id"] for item in result["actions_resolved"]], ["ACT-0010", "ACT-0011"])
+        self.assertEqual([item["id"] for item in result["actions_resolved"]], ["ACT-0013", "ACT-0014"])
         self.assertEqual(self.save(stage="done", next_step=None)[0], 0)
 
 
@@ -1506,7 +1507,7 @@ class KillMatrix(unittest.TestCase):
         def check(case, args):
             self.healthy(case)
             before = len((case / JOURNAL).read_bytes().splitlines())
-            self.assertIn(before, (18, 20))
+            self.assertIn(before, (26, 28))
             self.assertEqual(run(*args)[0], 0)
             self.assertEqual(vp.validate_case(case).errors, [])
 

@@ -231,6 +231,85 @@ class Retention(unittest.TestCase):
         self.assertGreater(item["required_new_clients"], most_new)
 
 
+class Revision(unittest.TestCase):
+    path = EXAMPLES / "retention-smb" / "extra" / "metrics-2026-q4.xlsx"
+
+    @classmethod
+    def setUpClass(cls):
+        cls.item = control("retention-smb")["revision"]
+        cls.expected = {entry["id"]: entry for entry in cls.item["numbers"]}
+        blocks = read(cls.path).blocks
+        cls.blocks = blocks
+        cls.rows = []
+        for block in blocks:
+            if block["locator"]["sheet"] != "Сегменты":
+                continue
+            cells = block["cells"]
+            number = re.search(r"\d+", next(iter(cells))).group()
+            if number != "1":
+                get = lambda column: cells.get(f"{column}{number}")
+                cls.rows.append({
+                    "sheet_row": int(number), "month": get("A"), "segment": get("B"), "start": get("C"),
+                    "new": get("D"), "churn": get("E"), "tariff": get("F"),
+                })
+
+    def rate(self, segment):
+        chosen = [row for row in self.rows if row["segment"] == segment]
+        return round(100 * sum(r["churn"] for r in chosen) / sum(r["start"] for r in chosen), 2)
+
+    def test_material_is_marked_and_readable(self):
+        self.assertEqual(read(self.path).status, "ok")
+        self.assertTrue(any("Учебные данные" in block["text"] for block in self.blocks))
+
+    def test_continues_the_same_table(self):
+        old = segment_table()
+        header = next(b for b in self.blocks if b["locator"]["sheet"] == "Сегменты" and "A1" in b["cells"])
+        self.assertEqual(
+            list(header["cells"].values()),
+            ["Месяц", "Сегмент", "Активных на начало", "Новых", "Ушедших", "Тариф, руб./мес."],
+        )
+        self.assertEqual({row["segment"] for row in self.rows}, set(SEGMENTS))
+        self.assertTrue(all(row["month"] > "2026-09" for row in self.rows))
+        for segment in SEGMENTS:
+            last = [r for r in old if r["segment"] == segment][-1]
+            mine = [r for r in self.rows if r["segment"] == segment]
+            self.assertEqual(mine[0]["start"], last["start"] + last["new"] - last["churn"])
+            for before, after in zip(mine, mine[1:]):
+                self.assertEqual(after["start"], before["start"] + before["new"] - before["churn"])
+            self.assertEqual({r["tariff"] for r in mine}, {last["tariff"]})
+
+    def test_revision_material_matches_control(self):
+        for segment, slug in ((SOLO, "solo"), (SMALL, "small")):
+            item = self.expected[f"churn_{slug}_next_period"]
+            self.assertAlmostEqual(self.rate(segment), item["value"], delta=item["tolerance"])
+            numbers = [int(n) for n in item["where"].split("строки ")[1].split(", ")]
+            located = [r for r in self.rows if r["sheet_row"] in numbers]
+            self.assertTrue(located and all(r["segment"] == segment for r in located))
+            self.assertEqual(len(located), len(numbers))
+
+    def test_one_conclusion_is_refuted_and_another_confirmed(self):
+        base = values("retention-smb")
+        solo_new = self.expected["churn_solo_next_period"]["value"]
+        self.assertLess(solo_new, base["churn_solo_after"]["value"] - 2)
+        self.assertLess(abs(solo_new - base["churn_solo_before"]["value"]), 0.5)
+        small_new = self.expected["churn_small_next_period"]["value"]
+        self.assertLess(abs(small_new - base["churn_small_after"]["value"]), 0.5)
+        self.assertLess(small_new, base["churn_small_2026_03"]["value"] / 2)
+        self.assertEqual(len(self.item["contested"]), 1)
+        self.assertEqual(len(self.item["confirmed"]), 1)
+        self.assertTrue(self.item["affected"] and self.item["unaffected"] and self.item["review_condition"])
+
+    def test_new_period_is_not_among_the_materials(self):
+        self.assertTrue(self.path.is_file())
+        self.assertFalse((EXAMPLES / "retention-smb" / "materials" / self.path.name).exists())
+        self.assertEqual(self.item["material"], "extra/" + self.path.name)
+
+    def test_card_has_the_revision_section(self):
+        text = (ACCEPTANCE / "retention-smb.md").read_text(encoding="utf-8")
+        self.assertIn("## Пересмотр: новые данные", text)
+        self.assertIn("metrics-2026-q4.xlsx", text)
+
+
 class Direction(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

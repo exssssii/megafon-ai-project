@@ -470,6 +470,7 @@ class CaseCopy(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
         self.case = self.tmp / "demo-case"
         shutil.copytree(DEMO, self.case)
+        (self.case / REPORT).unlink()
 
     def codes(self):
         report = vp.validate_case(self.case)
@@ -496,7 +497,7 @@ class HumanHelpCommand(CaseCopy):
         self.assertEqual(helped[-4]["reported_active_seconds"], 150)
         self.assertEqual(self.codes()[0], [])
         summary = ac.summarize(self.journal(), [])
-        self.assertEqual(summary["human"]["by_help"], {"choice": 3, "answer": 1, "material": 1, "workaround": 1})
+        self.assertEqual(summary["human"]["by_help"], {"choice": 6, "answer": 1, "material": 1, "workaround": 1})
 
     def test_a_total_for_the_whole_case(self):
         code, _ = self.human("--help-kind", "answer", "--active-minutes", "45", "--covers-case")
@@ -510,7 +511,7 @@ class HumanHelpCommand(CaseCopy):
         self.assertEqual((code, result["refused"]), (ck.EXIT_REFUSED, "human_total_invalid"))
 
     def test_a_total_without_time_is_caught_by_the_validator(self):
-        lines = self.journal() + act("ACT-0010", "human_input", 0, 0, human={"help": "answer", "covers_case": True})
+        lines = self.journal() + act("ACT-0013", "human_input", 0, 0, human={"help": "answer", "covers_case": True})
         write_journal(self.case, lines)
         self.assertIn("ACTION_HUMAN", self.codes()[0])
 
@@ -606,11 +607,11 @@ class SaveAndReport(CaseCopy):
     def test_save_keeps_an_estimated_total_valid(self):
         source = "тариф API на 2026-11-06"
         write_journal(self.case, self.journal() + act(
-            "ACT-0010", "model", 0, 1, cost=estimated(source, input_tokens=None, output_tokens=None,
+            "ACT-0013", "model", 0, 1, cost=estimated(source, input_tokens=None, output_tokens=None,
                                                       money_usd={"min": 1, "max": 2})))
         lines = self.journal()
         for line in lines:
-            if line["phase"] == "end" and line["id"] != "ACT-0010" and "human" not in line:
+            if line["phase"] == "end" and line["id"] != "ACT-0013" and "human" not in line:
                 line["cost"] = measured(input_tokens=None, output_tokens=None, money_usd=None)
             if line["phase"] == "end" and line.get("cost", {}).get("basis") == "unknown":
                 line["cost"] = measured(input_tokens=None, output_tokens=None, money_usd=None)
@@ -634,8 +635,8 @@ class SaveAndReport(CaseCopy):
         self.assertIn(f"Источников: {active}", (self.case / REPORT).read_text(encoding="utf-8"))
 
     def test_report_is_deterministic_and_passes_the_validator(self):
-        lines = self.journal() + act("ACT-0010", "compute", 0, 1, outcome="failed") + act(
-            "ACT-0011", "compute", 2, 3, retry=("ACT-0010", "Ссылка [CLM-0001] была неверной | таблица"))
+        lines = self.journal() + act("ACT-0013", "compute", 0, 1, outcome="failed") + act(
+            "ACT-0014", "compute", 2, 3, retry=("ACT-0013", "Ссылка [CLM-0001] была неверной | таблица"))
         write_journal(self.case, lines)
         code, result = run("report", self.case)
         self.assertEqual((code, result["report"]), (0, REPORT), result)
@@ -660,7 +661,7 @@ class SaveAndReport(CaseCopy):
         with open(self.case / JOURNAL, "ab") as handle:
             handle.write(b'{"format_version": 1, "id": "ACT-00')
         code, result = run("summary", self.case)
-        self.assertEqual((code, result["actions"]["total"]), (0, 9))
+        self.assertEqual((code, result["actions"]["total"]), (0, 12))
         self.assertIn("JOURNAL_TORN", result["warnings"])
 
     def test_corrupt_journal_and_missing_case_are_refused(self):

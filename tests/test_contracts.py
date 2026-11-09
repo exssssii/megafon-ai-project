@@ -550,7 +550,7 @@ class RecordTimes(Mutating):
                 self.expect(["TIME_IN_FUTURE"])
 
     def test_clock_difference_of_two_machines_is_accepted(self):
-        recorded = vp.datetime.fromisoformat(read_json(self.case / DECISIONS)["records"][0]["created_at"])
+        recorded = vp.datetime.fromisoformat(read_json(self.case / DECISIONS)["records"][-1]["created_at"])
         with mock.patch.object(vp, "current_time", return_value=recorded - vp.timedelta(minutes=4)):
             self.assertNotIn("TIME_IN_FUTURE", codes(self.run_case())[0])
         with mock.patch.object(vp, "current_time", return_value=recorded - vp.timedelta(minutes=6)):
@@ -572,7 +572,7 @@ class Robustness(Mutating):
 
     def test_brief_choice_without_option_is_valid(self):
         def mutate(d):
-            for record in d["records"]:
+            for record in d["records"][:2]:
                 record["topic"] = "brief"
             d["records"][1]["choice"]["option_id"] = None
 
@@ -727,14 +727,14 @@ class Robustness(Mutating):
 class JournalAndCheckpoints(Mutating):
     def test_tear_cut_append_passes(self):
         path = self.case / JOURNAL
-        path.write_bytes(path.read_bytes() + b'{"format_version": 1, "id": "ACT-0010", "ph')
+        path.write_bytes(path.read_bytes() + b'{"format_version": 1, "id": "ACT-0013", "ph')
         self.assertEqual(codes(self.run_case()), ([], ["JOURNAL_TORN"]))
         data = path.read_bytes()
         path.write_bytes(data[: data.rindex(b"\n") + 1])
-        start = {"format_version": 1, "id": "ACT-0010", "phase": "start", "kind": "save", "tool": "checkpoint",
-                 "environment": "codex", "model": None, "input_refs": [], "at": "2026-11-03T10:00:00+03:00"}
-        end = {"format_version": 1, "id": "ACT-0010", "phase": "end", "outcome": "completed", "result_refs": [],
-               "cost": {"basis": "unknown"}, "at": "2026-11-03T10:00:01+03:00"}
+        start = {"format_version": 1, "id": "ACT-0013", "phase": "start", "kind": "save", "tool": "checkpoint",
+                 "environment": "codex", "model": None, "input_refs": [], "at": "2026-11-06T10:00:00+03:00"}
+        end = {"format_version": 1, "id": "ACT-0013", "phase": "end", "outcome": "completed", "result_refs": [],
+               "cost": {"basis": "unknown"}, "at": "2026-11-06T10:00:01+03:00"}
         with path.open("ab") as handle:
             for line in (start, end):
                 handle.write(json.dumps(line).encode("utf-8") + b"\n")

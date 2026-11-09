@@ -516,8 +516,9 @@ class Withdrawal(unittest.TestCase):
         self.assertEqual(dependents["OPT"], ["OPT-0001", "OPT-0003"])
         self.assertEqual(dependents["Q"], ["Q-0002"])
         self.assertIn("DEC-0002", dependents["DEC"])
-        self.assertEqual(dependents["outputs"], ["outputs/communication-strategy.md", "outputs/product-strategy.md",
-                                                 "outputs/validation-plan.md"])
+        self.assertEqual(dependents["outputs"], [
+            "outputs/commitments.md", "outputs/communication-strategy.md", "outputs/options.md",
+            "outputs/product-strategy.md", "outputs/validation-plan.md"])
         self.assertIn(("WITHDRAWN_USED", "CALC-0002"), self.validate())
         self.assertTrue(any(item["code"] == "WITHDRAWN_USED" for item in report["case_errors"]))
         calc = json.loads((self.case / "evidence/calculations.json").read_text(encoding="utf-8"))
@@ -852,14 +853,16 @@ class Navigation(unittest.TestCase):
         self.assertEqual((code, lines), (OK, []))
         self.assertEqual(report["dependents"]["CLM"], ["CLM-0006"])
         self.assertEqual(report["dependents"]["OPT"], ["OPT-0001", "OPT-0003"])
-        self.assertEqual(report["dependents"]["outputs"], ["outputs/communication-strategy.md",
-                                                           "outputs/product-strategy.md"])
+        self.assertEqual(report["dependents"]["outputs"], [
+            "outputs/commitments.md", "outputs/communication-strategy.md", "outputs/options.md",
+            "outputs/product-strategy.md", "outputs/validation-plan.md"])
         self.assertEqual(report["inactive"], ["DEC-0001"])
         self.assertEqual(self.run_tool("impact", self.case, "SRC-0004")[1]["dependents"],
                          {"CLM": ["CLM-0001"], "outputs": ["outputs/communication-strategy.md"]})
         self.assertEqual(self.run_tool("impact", self.case, "CLM-0004")[1]["dependents"], {})
         self.assertEqual(self.run_tool("impact", self.case, "DEC-0002")[1]["dependents"],
-                         {"outputs": ["outputs/product-strategy.md"]})
+                         {"outputs": ["outputs/commitments.md", "outputs/communication-strategy.md",
+                                      "outputs/product-strategy.md", "outputs/validation-plan.md"]})
 
 
 def calc_record(calc_id, inputs):

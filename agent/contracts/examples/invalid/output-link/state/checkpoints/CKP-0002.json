@@ -2,7 +2,7 @@
   "format_version": 1,
   "id": "CKP-0002",
   "case_id": "demo-case",
-  "created_at": "2026-11-02T10:00:00+03:00",
+  "created_at": "2026-11-05T12:30:00+03:00",
   "seq": 2,
   "previous": "CKP-0001",
   "goal": "Выбрать направление для «Книжной полки» и подготовить две стратегии",
@@ -14,15 +14,15 @@
     },
     {
       "path": "outputs/product-strategy.md",
-      "sha256": "ecd7d4292096a4d791f56d6b226ea75e08143ad68a679abb8b9d2d876484fbf8"
+      "sha256": "1d0d7c7e6523a572d088e16405ac8f1b8685fe88b67434d8efb87d45138e5134"
     },
     {
       "path": "outputs/communication-strategy.md",
-      "sha256": "c9a3c685e3f815761e80dfa0d02b9cc864af391c44a717cbbfa1c676dd509543"
+      "sha256": "204069711901e7fc524b793b276e27f8ee20ef43aec3ed74f2beaae19abf9f21"
     },
     {
       "path": "outputs/validation-plan.md",
-      "sha256": "c8b11079631e145ef2ceff6ce9eca6424dfc96bfb353bd72df6b43aed06007ab"
+      "sha256": "a1dbd8a0bb059feeeb65bc98839487d66cb710e60bebfd3c80c788c68dd3cf95"
     }
   ],
   "completed_actions": [
@@ -33,18 +33,24 @@
     "ACT-0006",
     "ACT-0007",
     "ACT-0008",
-    "ACT-0009"
+    "ACT-0009",
+    "ACT-0010",
+    "ACT-0011",
+    "ACT-0012"
   ],
   "human_choices": [
     "DEC-0001",
-    "DEC-0002"
+    "DEC-0002",
+    "DEC-0003",
+    "DEC-0004",
+    "DEC-0005"
   ],
   "open_items": [
     "Проверить окупаемость пункта"
   ],
   "next_step": "Согласовать план проверки",
   "totals": {
-    "elapsed_seconds": 3600,
+    "elapsed_seconds": 268200,
     "time_to_first_result_seconds": 600,
     "human_active_seconds": null,
     "cost": {

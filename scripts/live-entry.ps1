@@ -216,7 +216,9 @@ if ($Suite -eq 'entry') {
     New-Item -ItemType Directory -Force -Path $inbox, $held | Out-Null
     Copy-Item -LiteralPath (Join-Path $clone "examples\$caseId\request.md") -Destination $inbox
     Copy-Item -LiteralPath (Join-Path $clone "examples\$caseId\materials") -Destination $inbox -Recurse
-    $extra = if ($hardRun) { $facts.Unreadable + $facts.Injected + $facts.Conflict } else { @('saved-page.md') }
+    $extra = @(if ($hardRun) { $facts.Unreadable + $facts.Injected + $facts.Conflict } else { 'saved-page.md' })
+    # The new-period table of the revision check is held back too: the agent gets it only when the run hands it over.
+    if ($caseId -eq 'retention-smb') { $extra += 'metrics-2026-q4.xlsx' }
     foreach ($name in $extra) { Copy-Item -LiteralPath (Join-Path $clone "examples\$caseId\extra\$name") -Destination $held }
     $hidden = @((Get-ChildItem -LiteralPath (Join-Path $clone 'docs') -Force |
             Where-Object { $_.Name -ne 'development-rules.md' } | ForEach-Object { "docs\$($_.Name)" })) +

@@ -20,6 +20,8 @@ from pathlib import Path
 
 from calc_engine import CalcError, number_matches, numbers_in_text, round_half_up, same_number, to_decimal
 from checkpoint import Parser, Refused, UsageError
+from outputs_md import STATUS_CHOSEN_RE, STATUS_PRELIMINARY_RE, is_status_line, split_sections
+from revision import REVISIONS, parse_revisions
 from validate_project import BRACKET_RE, ID_RE, Validator, is_active, prefix_of
 
 EXIT_OK, EXIT_PROBLEMS, EXIT_REFUSED, EXIT_INTERNAL = 0, 1, 4, 5
@@ -35,6 +37,8 @@ OPTIONS = "outputs/options.md"
 PRODUCT = "outputs/product-strategy.md"
 COMMUNICATION = "outputs/communication-strategy.md"
 PLAN = "outputs/validation-plan.md"
+COMMITMENTS = "outputs/commitments.md"
+HISTORY = "outputs/.history"
 OPTION_REGISTRY = "decisions/options.json"
 QUESTION_REGISTRY = "research/questions.json"
 DECISION_REGISTRY = "decisions/decisions.json"
@@ -43,6 +47,10 @@ CHOSEN_SECTION = "Выбранное направление"
 PROMISE_SECTION = "Обещания и возможности"
 PROMISE_COLUMNS = ["Обещание", "Возможность продукта", "Основание"]
 COMPARISON_SECTION = "Сравнение вариантов"
+ACTION_SECTION = "Действия"
+ACTION_COLUMNS = ["Действие", "Ответственный", "Срок", "Показатель", "Основание"]
+REVIEW_SECTION = "Условия пересмотра"
+APPROVAL_SECTION = "Согласование"
 SECTIONS = {
     OPTIONS: ("Что известно", "Чего не хватает", COMPARISON_SECTION, "Рекомендация", "Что изменит рекомендацию"),
     PRODUCT: ("Аудитория и задача", "Текущие альтернативы", CHOSEN_SECTION, "Отказы", "Ценность",
@@ -51,6 +59,7 @@ SECTIONS = {
                     "Границы обещаний", PROMISE_SECTION),
     PLAN: ("Ожидаемое изменение", "Показатель и единица", "Исходное состояние", "С чем сравниваем",
            "Период наблюдения", "Условие успеха и неуспеха", "Нежелательные последствия"),
+    COMMITMENTS: ("Решение", ACTION_SECTION, "Обязательства", REVIEW_SECTION, APPROVAL_SECTION),
 }
 KIND_SECTIONS = {"close": "Завершение и последствия", "keep": "Почему без изменений и условия пересмотра"}
 LINKED_SECTIONS = {
@@ -62,8 +71,6 @@ OPTION_TEXT_FIELDS = ("title", "audience_task", "action", "benefit_mechanism", "
                       "verification")
 OPTION_LIST_FIELDS = ("rejected_actions", "preconditions", "objections", "risks")
 
-STATUS_CHOSEN_RE = re.compile(r"Статус: выбор сделан \[(DEC-[0-9]{4,})\], вариант \[(OPT-[0-9]{4,})\]")
-STATUS_PRELIMINARY_RE = re.compile(r"Статус: предварительно, выбор не сделан, предложен вариант \[(OPT-[0-9]{4,})\]")
 MONTHS = "января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря"
 NOT_QUANTITY_RE = re.compile(rf"\b\d{{4}}-\d{{2}}(?:-\d{{2}})?\b|\b\d{{1,2}}\.\d{{1,2}}\.\d{{2,4}}\b|\b\d{{1,2}}\.\d{{4}}\b"
                              rf"|\b\d{{1,2}}\s+(?:{MONTHS})\b|\b\d+/\d+\b|[A-Za-zА-Яа-яЁё]+-\d+\b", re.IGNORECASE)
@@ -107,21 +114,6 @@ def read_output(root: Path, file: str) -> list[str] | None:
         return None
 
 
-def split_sections(lines: list[str]) -> dict:
-    """Heading of the second level -> list of (line number, line)."""
-    sections, current, fenced = {}, None, False
-    for number, line in enumerate(lines, 1):
-        if line.lstrip().startswith("```"):
-            fenced = not fenced
-        if not fenced and line.startswith("## "):
-            current = sections.setdefault(line[3:].strip(), [])
-        elif not fenced and line.startswith("# "):
-            current = None
-        elif current is not None:
-            current.append((number, line))
-    return sections
-
-
 def has_text(body: list) -> bool:
     return any(line.strip() and not line.lstrip().startswith("#") for _, line in body)
 
@@ -149,10 +141,6 @@ def status_line(lines: list[str]) -> tuple[int, str] | None:
 
 
 # --- numbers ---------------------------------------------------------------
-
-def is_status_line(line: str) -> bool:
-    return bool(STATUS_CHOSEN_RE.fullmatch(line.strip()) or STATUS_PRELIMINARY_RE.fullmatch(line.strip()))
-
 
 def blank(match: re.Match) -> str:
     return "\0" * len(match.group(0))  # not a space: a link must not read as a gap in a range
@@ -294,7 +282,8 @@ class Gate:
         self.user_said = user_numbers(root)
         self.questions = [r for r in validator.registries["Q"] if is_active(r["id"], r)]
         self.options = [r for r in validator.registries["OPT"] if is_active(r["id"], r)]
-        self.decisions = [r for r in validator.registries["DEC"] if is_active(r["id"], r)]
+        self.all_decisions = list(validator.registries["DEC"])
+        self.decisions = [r for r in self.all_decisions if is_active(r["id"], r)]
         self.direction = self.active_decision("direction")
         self.texts: dict[str, list[str] | None] = {}
 
@@ -408,9 +397,81 @@ class Gate:
         elif not self.cited(PLAN, thresholds["id"]):
             result.problem("THRESHOLDS_NOT_CITED", PLAN, thresholds["id"],
                            "the validation plan does not cite the current thresholds decision")
+        self.check_commitments()
+        self.check_revisions()
         for record_id, record in self.index.items():
             if prefix_of(record_id) == "ACT" and isinstance(record, dict) and record.get("end") is None:
                 result.problem("ACTIONS_OPEN", "state/actions.jsonl", record_id, "started and not finished")
+
+    def check_commitments(self):
+        result = self.result
+        self.check_output(COMMITMENTS, SECTIONS[COMMITMENTS])
+        lines = self.lines_of(COMMITMENTS)
+        if lines is not None:
+            sections = split_sections(lines)
+            if ACTION_SECTION in sections:
+                self.check_actions(sections[ACTION_SECTION])
+            for number, line in sections.get(REVIEW_SECTION, []):
+                if line.strip() and not HEADING_RE.match(line) and not references(line):
+                    result.problem("REVIEW_UNLINKED", COMMITMENTS, None, "a condition without a link", number)
+        decision = self.active_decision("commitments")
+        if decision is None or decision["status"] != "chosen":
+            result.problem("COMMITMENTS_PENDING", DECISION_REGISTRY, None,
+                           "the person has not agreed the commitments")
+        elif self.is_before_direction(decision):
+            result.problem("COMMITMENTS_PENDING", DECISION_REGISTRY, decision["id"],
+                           "the commitments were agreed before the current choice of direction")
+        elif lines is not None and not any(decision["id"] in references(line) for _, line
+                                           in split_sections(lines).get(APPROVAL_SECTION, [])):
+            result.problem("COMMITMENTS_NOT_CITED", COMMITMENTS, decision["id"],
+                           "the section «Согласование» does not cite the current commitments decision")
+
+    def check_actions(self, body):
+        rows = [(number, [cell.strip() for cell in line.strip().strip("|").split("|")])
+                for number, line in body if line.lstrip().startswith("|")]
+        if not rows or rows[0][1] != ACTION_COLUMNS:
+            self.result.problem("COMMITMENTS_TABLE", COMMITMENTS, None, "columns: " + ", ".join(ACTION_COLUMNS))
+            return
+        rows = [row for row in rows[1:] if not all(set(cell) <= set(":- ") for cell in row[1])]
+        if not rows:
+            self.result.problem("COMMITMENTS_TABLE", COMMITMENTS, None, "the table has no rows")
+        for number, cells in rows:
+            if len(cells) != len(ACTION_COLUMNS) or not all(cells) or not references(cells[-1]):
+                self.result.problem("COMMITMENTS_TABLE", COMMITMENTS, None,
+                                    "a row needs all five cells and a link in the basis", number)
+
+    def check_revisions(self):
+        result = self.result
+        revisions = [d for d in self.all_decisions if d["topic"] == "revision" and d["status"] in ("chosen", "superseded")]
+        text = read_output(self.root, REVISIONS)
+        if not revisions and text is None:
+            return
+        if text is None:
+            for decision in revisions:
+                result.problem("REVISION_UNRECORDED", REVISIONS, decision["id"], "no revision log")
+            return
+        entries, problems = parse_revisions("\n".join(text))
+        for item in problems:
+            result.problem(item["code"], REVISIONS, None, item["note"], item["line"])
+        for decision in revisions:
+            if sum(1 for e in entries if e["choice"] == decision["id"]) != 1:
+                result.problem("REVISION_UNRECORDED", REVISIONS, decision["id"],
+                               "the decision must be in the choice of exactly one entry")
+        for entry in entries:
+            folder = self.root / HISTORY / str(entry["number"])
+            if entry["choice"] and not (folder.is_dir() and any(path.is_file() for path in folder.iterdir())):
+                result.problem("REVISION_NO_SNAPSHOT", f"{HISTORY}/{entry['number']}", entry["choice"],
+                               "no copy of the previous outputs", entry["line"])
+        by_id = {d["id"]: d for d in revisions}
+        for file, topic in (("validation-plan.md", "thresholds"), ("commitments.md", "commitments")):
+            touching = [by_id[e["choice"]] for e in entries if e["choice"] in by_id and file in e["touched"]]
+            current = self.active_decision(topic)
+            if not touching or current is None or current["status"] != "chosen":
+                continue
+            latest = max(datetime.fromisoformat(d["choice"]["chosen_at"]) for d in touching)
+            if datetime.fromisoformat(current["choice"]["chosen_at"]) < latest:
+                result.problem("REAPPROVAL_PENDING", DECISION_REGISTRY, current["id"],
+                               f"the {topic} were agreed before the last revision that touched {file}")
 
     def cited(self, file, record_id) -> bool:
         lines = self.lines_of(file) or []

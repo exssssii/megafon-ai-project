@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
 import gate  # noqa: E402
+import revision  # noqa: E402
 
 DEMO = ROOT / "agent" / "contracts" / "examples" / "valid" / "demo-case"
 PROBLEMS, REFUSED = 1, 4
@@ -152,6 +153,33 @@ PLAN_MD = f"""# План проверки
 Очереди в пунктах.
 """
 
+COMMITMENTS_MD = f"""# Решение и обязательства
+
+{STATUS}
+
+## Решение
+
+Сохраняем сервис [OPT-0001], основание [CLM-0002].
+
+## Действия
+
+| Действие | Ответственный | Срок | Показатель | Основание |
+|---|---|---|---|---|
+| Сохранить сервис | руководитель продукта | 2026-12-01 (допущение) | Заявок в месяц | [OPT-0001] |
+
+## Обязательства
+
+Бесплатный обмен сохраняется [CLM-0001].
+
+## Условия пересмотра
+
+Если подтвердится, что жителей района стало меньше [CLM-0002], пересматриваем.
+
+## Согласование
+
+Обязательства согласованы [DEC-0004].
+"""
+
 
 def tree_hash(folder: Path) -> str:
     digest = hashlib.sha256()
@@ -176,9 +204,19 @@ class Base(unittest.TestCase):
         self.write("outputs/product-strategy.md", PRODUCT_MD)
         self.write("outputs/communication-strategy.md", COMMUNICATION_MD)
         self.write("outputs/validation-plan.md", PLAN_MD)
+        self.write("outputs/commitments.md", COMMITMENTS_MD)
         self.write("outputs/accounting.md", "# Учёт работы\n")
         self.change("Q", self.partial_question)
-        self.add_thresholds()
+        self.drop_demo_revision()
+
+    def drop_demo_revision(self):
+        """The example holds one recorded revision; the tests below add their own."""
+        (self.case / "outputs" / "revisions.md").unlink()
+        shutil.rmtree(self.case / "outputs" / ".history")
+        journal = self.case / "state" / "actions.jsonl"
+        lines = journal.read_text(encoding="utf-8").splitlines(keepends=True)
+        journal.write_text("".join(line for line in lines if '"ACT-0011"' not in line), encoding="utf-8")
+        self.change("DEC", lambda records: records.remove(next(r for r in records if r["id"] == "DEC-0005")))
 
     def write(self, name, text):
         (self.case / name).write_text(text, encoding="utf-8")
@@ -200,20 +238,28 @@ class Base(unittest.TestCase):
     def partial_question(records):
         records[1]["status"] = "partial"
 
-    def add_thresholds(self):
+    def add_approval(self, topic, dec_id, act_id, at=None, supersedes=None):
         journal = self.case / "state" / "actions.jsonl"
         lines = [json.loads(line) for line in journal.read_text(encoding="utf-8").splitlines()]
-        common = {"format_version": 1, "id": "ACT-0100"}
-        at = lines[-1]["at"]
+        common = {"format_version": 1, "id": act_id}
+        at = at or lines[-1]["at"]
         start = next(line for line in lines if line.get("kind") == "human_input" and line["phase"] == "start")
         end = next(line for line in lines if line["id"] == start["id"] and line["phase"] == "end")
         lines.append(start | common | {"at": at})
-        lines.append(end | common | {"at": at, "result_refs": ["DEC-0003"]})
+        lines.append(end | common | {"at": at, "result_refs": [dec_id]})
         journal.write_text("".join(json.dumps(line, ensure_ascii=False) + "\n" for line in lines), encoding="utf-8")
-        self.change("DEC", lambda records: records.append({
-            "id": "DEC-0003", "created_at": at, "topic": "thresholds", "status": "chosen", "proposal": None,
-            "choice": {"option_id": None, "user_statement": "Пороги подходят", "chosen_at": at,
-                       "action_id": "ACT-0100"}}))
+        record = {"id": dec_id, "created_at": at, "topic": topic, "status": "chosen", "proposal": None,
+                  "choice": {"option_id": None, "user_statement": "Согласовано", "chosen_at": at,
+                             "action_id": act_id}}
+        if supersedes:
+            record |= {"supersedes": supersedes, "change_reason": "новые данные"}
+
+        def add(records):
+            records.append(record)
+            for old in records:
+                if old["id"] == supersedes:
+                    old["status"] = "superseded"
+        self.change("DEC", add)
 
     @staticmethod
     def not_a_choice(line):
@@ -221,11 +267,11 @@ class Base(unittest.TestCase):
         if "human" in line and not line["result_refs"]:
             line["human"]["help"] = "answer"
 
-    def drop_threshold_link(self):
+    def drop_threshold_link(self, dec_id="DEC-0003"):
         journal = self.case / "state" / "actions.jsonl"
         lines = [json.loads(line) for line in journal.read_text(encoding="utf-8").splitlines()]
         for line in lines:
-            if line.get("result_refs") == ["DEC-0003"]:
+            if line.get("result_refs") == [dec_id]:
                 line["result_refs"] = []
                 self.not_a_choice(line)
         journal.write_text("".join(json.dumps(line, ensure_ascii=False) + "\n" for line in lines), encoding="utf-8")
@@ -244,6 +290,32 @@ class Base(unittest.TestCase):
 
     def assert_code(self, code, stage="done", *flags):
         self.assertIn(code, self.codes(stage, *flags))
+
+
+class ContractExample(unittest.TestCase):
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.addCleanup(folder.cleanup)
+        self.case = Path(folder.name) / "demo-case"
+        shutil.copytree(DEMO, self.case)
+
+    def run_tool(self, module, *args):
+        raw = io.BytesIO()
+        out = io.TextIOWrapper(raw, encoding="utf-8", newline="\n")
+        with contextlib.redirect_stdout(out):
+            code = module.main([*args])
+        out.flush()
+        return code, json.loads(raw.getvalue().decode("utf-8").splitlines()[0])
+
+    def test_contract_example_passes_done(self):
+        code, report = self.run_tool(gate, "check", str(self.case), "done")
+        self.assertEqual((code, report["problems"], report["warnings"]), (0, [], []))
+
+    def test_contract_example_has_a_recorded_revision(self):
+        code, report = self.run_tool(revision, "affected", str(self.case), "CLM-0001")
+        self.assertEqual(code, 0)
+        self.assertEqual(report["affected"], {"outputs/communication-strategy.md": ["Ключевое сообщение"]})
+        self.assertEqual(report["reapproval"], [])
 
 
 class Passing(Base):
@@ -267,7 +339,7 @@ class Passing(Base):
         def choose_close(records):
             records[1]["choice"]["option_id"] = "OPT-0002"
         self.change("DEC", choose_close)
-        for name in ("product-strategy", "communication-strategy", "validation-plan"):
+        for name in ("product-strategy", "communication-strategy", "validation-plan", "commitments"):
             self.replace(f"outputs/{name}.md", "вариант [OPT-0001]", "вариант [OPT-0002]")
         self.replace("outputs/product-strategy.md", "Сохраняем сервис [OPT-0001]", "Закрываем сервис [OPT-0002]")
         self.replace("outputs/communication-strategy.md", "## Почему без изменений и условия пересмотра",
@@ -280,7 +352,7 @@ class Passing(Base):
         def choose_develop(records):
             records[1]["choice"]["option_id"] = "OPT-0003"
         self.change("DEC", choose_develop)
-        for name in ("product-strategy", "communication-strategy", "validation-plan"):
+        for name in ("product-strategy", "communication-strategy", "validation-plan", "commitments"):
             self.replace(f"outputs/{name}.md", "вариант [OPT-0001]", "вариант [OPT-0003]")
         self.replace("outputs/product-strategy.md", "Сохраняем сервис [OPT-0001]", "Развиваем [OPT-0003]")
         self.replace("outputs/communication-strategy.md", "## Почему без изменений и условия пересмотра\n\n"
@@ -353,7 +425,7 @@ class Options(Base):
 
     def test_no_proposal(self):
         self.change("DEC", lambda records: records.clear())
-        for name in ("product-strategy", "communication-strategy", "validation-plan"):
+        for name in ("product-strategy", "communication-strategy", "validation-plan", "commitments"):
             (self.case / f"outputs/{name}.md").unlink()
         journal = self.case / "state/actions.jsonl"
         lines = [json.loads(line) for line in journal.read_text(encoding="utf-8").splitlines()]
@@ -403,7 +475,7 @@ class Decision(Base):
 
     def test_preliminary_passes_without_a_choice_and_never_on_done(self):
         self.change("DEC", self.make_proposed)
-        for name in ("product-strategy", "communication-strategy", "validation-plan"):
+        for name in ("product-strategy", "communication-strategy", "validation-plan", "commitments"):
             self.replace(f"outputs/{name}.md", STATUS, DRAFT)
         self.replace("outputs/product-strategy.md", "Сохраняем сервис [OPT-0001]", "Развиваем [OPT-0003]")
         self.replace("outputs/communication-strategy.md", "## Почему без изменений и условия пересмотра\n\n"
@@ -571,7 +643,7 @@ class Done(Base):
 
     def test_thresholds_are_required(self):
         self.drop_threshold_link()
-        self.change("DEC", lambda records: records.pop())
+        self.change("DEC", lambda records: records.remove(next(r for r in records if r["id"] == "DEC-0003")))
         self.replace("outputs/validation-plan.md", "Пороги согласованы [DEC-0003].", "Пороги согласованы.")
         self.assertEqual(self.codes("validation_plan"), set())
         self.assertEqual(self.codes(), {"THRESHOLDS_PENDING"})
@@ -591,14 +663,14 @@ class Done(Base):
     def test_replaced_thresholds_need_a_new_citation(self):
         def replace(records):
             old = records[2]
-            records.append({**old, "id": "DEC-0004", "supersedes": "DEC-0003", "change_reason": "новые пороги"})
+            records.append({**old, "id": "DEC-0005", "supersedes": "DEC-0003", "change_reason": "новые пороги"})
             old["status"] = "superseded"
         self.change("DEC", replace)
-        self.replace("state/actions.jsonl", '"result_refs": ["DEC-0003"]', '"result_refs": ["DEC-0003", "DEC-0004"]')
+        self.replace("state/actions.jsonl", '"result_refs": ["DEC-0003"]', '"result_refs": ["DEC-0003", "DEC-0005"]')
         self.assertEqual(self.codes(), {"CASE_INVALID"})
         self.replace("outputs/validation-plan.md", "[DEC-0003]", "")
         self.assertEqual(self.codes(), {"THRESHOLDS_NOT_CITED"})
-        self.replace("outputs/validation-plan.md", "согласованы .", "согласованы [DEC-0004].")
+        self.replace("outputs/validation-plan.md", "согласованы .", "согласованы [DEC-0005].")
         self.assertEqual(self.codes(), set())
 
     def test_unfinished_action(self):
@@ -712,6 +784,191 @@ class ReviewedChoices(Base):
         self.assertEqual(self.codes(), set())
 
 
+REVISION_AT = "2026-11-05T10:00:00+03:00"
+LATER_AT = "2026-11-08T10:00:00+03:00"
+
+
+def revisions_md(*entries):
+    return "# Пересмотры\n" + "".join(entries)
+
+
+def revision_entry(number=1, choice="[DEC-0005]", touched="validation-plan.md «Условие успеха и неуспеха»",
+                   snapshot=None):
+    snapshot = snapshot or f"outputs/.history/{number}/"
+    return f"""
+## Пересмотр {number} — 2026-11-05
+
+- Новые данные: [SRC-0001]
+- Изменилось: [CLM-0001]
+- Условия пересмотра: не сработало ни одно
+- Затронуто: {touched}
+- Не затронуто: product-strategy.md
+- Выбор: {choice}
+- Прежние версии: {snapshot}
+"""
+
+
+class Commitments(Base):
+    def test_required_at_done_only(self):
+        (self.case / "outputs/commitments.md").unlink()
+        self.assertEqual(self.codes(), {"OUTPUT_MISSING"})
+        self.assertEqual(self.codes("validation_plan"), set())
+
+    def test_old_finished_case(self):
+        (self.case / "outputs/commitments.md").unlink()
+        self.drop_threshold_link("DEC-0004")
+        self.change("DEC", lambda records: records.remove(next(r for r in records if r["id"] == "DEC-0004")))
+        self.assertEqual(self.codes(), {"OUTPUT_MISSING", "COMMITMENTS_PENDING"})
+
+    def test_section_missing(self):
+        self.replace("outputs/commitments.md", "## Обязательства", "## Другое")
+        self.assert_code("OUTPUT_SECTION")
+
+    def test_table_header(self):
+        self.replace("outputs/commitments.md", "| Срок |", "| Дата |")
+        self.assert_code("COMMITMENTS_TABLE")
+
+    def test_table_without_rows(self):
+        self.replace("outputs/commitments.md", "| Сохранить сервис | руководитель продукта | 2026-12-01 (допущение) |"
+                     " Заявок в месяц | [OPT-0001] |\n", "")
+        self.assert_code("COMMITMENTS_TABLE")
+
+    def test_row_without_basis(self):
+        self.replace("outputs/commitments.md", "| Заявок в месяц | [OPT-0001] |", "| Заявок в месяц | |")
+        _, report = self.check()
+        self.assertEqual([(p["code"], p.get("line")) for p in report["problems"]], [("COMMITMENTS_TABLE", 13)])
+
+    def test_row_with_an_empty_cell(self):
+        self.replace("outputs/commitments.md", "| руководитель продукта |", "| |")
+        self.assert_code("COMMITMENTS_TABLE")
+
+    def test_review_without_link(self):
+        self.replace("outputs/commitments.md", "стало меньше [CLM-0002],", "стало меньше (допущение),")
+        _, report = self.check()
+        self.assertEqual([(p["code"], p.get("line")) for p in report["problems"]], [("REVIEW_UNLINKED", 21)])
+
+    def test_number_without_basis(self):
+        self.replace("outputs/commitments.md", "сохраняется [CLM-0001].", "сохраняется 5 лет.")
+        self.assert_code("NUMBER_UNLINKED")
+
+    def test_decision_before_direction(self):
+        def move(records):
+            next(r for r in records if r["id"] == "DEC-0004")["choice"]["chosen_at"] = "2026-11-01T10:00:00+03:00"
+        self.change("DEC", move)
+        self.assert_code("COMMITMENTS_PENDING")
+
+    def test_not_cited(self):
+        self.replace("outputs/commitments.md", "согласованы [DEC-0004].", "согласованы.")
+        self.assertEqual(self.codes(), {"COMMITMENTS_NOT_CITED"})
+
+
+class Revisions(Base):
+    def add_revision(self, at=REVISION_AT):
+        self.add_approval("revision", "DEC-0005", "ACT-0102", at=at)
+
+    def snapshot(self, number=1):
+        folder = self.case / "outputs" / ".history" / str(number)
+        folder.mkdir(parents=True)
+        (folder / "validation-plan.md").write_text("# Копия\n", encoding="utf-8")
+
+    def log(self, *entries):
+        self.write("outputs/revisions.md", revisions_md(*entries))
+
+    def recorded(self, **fields):
+        self.add_revision()
+        self.snapshot()
+        self.log(revision_entry(**fields))
+
+    def reapprove(self, topic, dec_id, act_id, old):
+        self.add_approval(topic, dec_id, act_id, at=LATER_AT, supersedes=old)
+
+    def test_no_revision_no_file_needed(self):
+        self.assertEqual(self.codes(), set())
+
+    def test_revision_without_entry(self):
+        self.add_revision()
+        self.assertEqual(self.codes(), {"REVISION_UNRECORDED"})
+        self.log(revision_entry(choice="изменений нет", snapshot="нет"))
+        self.assertEqual(self.codes(), {"REVISION_UNRECORDED"})
+
+    def test_entry_without_snapshot(self):
+        self.add_revision()
+        self.log(revision_entry(touched="product-strategy.md"))
+        self.assertEqual(self.codes(), {"REVISION_NO_SNAPSHOT"})
+        (self.case / "outputs/.history/1").mkdir(parents=True)
+        self.assertEqual(self.codes(), {"REVISION_NO_SNAPSHOT"})
+        (self.case / "outputs/.history/1/product-strategy.md").write_text("# Копия\n", encoding="utf-8")
+        self.assertEqual(self.codes(), set())
+
+    def test_unchanged_entry_needs_no_snapshot(self):
+        self.log(revision_entry(choice="изменений нет", snapshot="нет"))
+        self.assertEqual(self.codes(), set())
+        self.add_revision()
+        self.snapshot(2)
+        self.log(revision_entry(choice="изменений нет", snapshot="нет"),
+                 revision_entry(2, touched="product-strategy.md"))
+        self.assertEqual(self.codes(), set())
+
+    def test_duplicate_choice(self):
+        self.add_revision()
+        self.snapshot()
+        self.snapshot(2)
+        self.log(revision_entry(touched="product-strategy.md"), revision_entry(2, touched="product-strategy.md"))
+        self.assertEqual(self.codes(), {"REVISION_UNRECORDED"})
+
+    def test_log_problems_surface(self):
+        self.recorded(touched="product-strategy.md")
+        self.replace("outputs/revisions.md", "## Пересмотр 1 —", "## Пересмотр 3 —")
+        _, report = self.check()
+        self.assertIn(("REVISION_NUMBER", "outputs/revisions.md", 3),
+                      [(p["code"], p["file"], p.get("line")) for p in report["problems"]])
+
+    def test_reapproval_after_plan_touched(self):
+        self.recorded()
+        _, report = self.check()
+        self.assertEqual([(p["code"], p["id"]) for p in report["problems"]], [("REAPPROVAL_PENDING", "DEC-0003")])
+        self.reapprove("thresholds", "DEC-0006", "ACT-0103", "DEC-0003")
+        self.replace("outputs/validation-plan.md", "[DEC-0003]", "[DEC-0006]")
+        self.assertEqual(self.codes(), set())
+
+    def test_reapproval_after_commitments_touched(self):
+        self.recorded(touched="commitments.md «Действия»")
+        _, report = self.check()
+        self.assertEqual([(p["code"], p["id"]) for p in report["problems"]], [("REAPPROVAL_PENDING", "DEC-0004")])
+        self.reapprove("commitments", "DEC-0006", "ACT-0103", "DEC-0004")
+        self.replace("outputs/commitments.md", "[DEC-0004]", "[DEC-0006]")
+        self.assertEqual(self.codes(), set())
+
+    def test_second_revision_supersedes_the_first(self):
+        self.add_revision()
+        self.snapshot()
+        self.snapshot(2)
+        self.add_approval("revision", "DEC-0006", "ACT-0103", at=LATER_AT, supersedes="DEC-0005")
+        self.log(revision_entry(touched="product-strategy.md"),
+                 revision_entry(2, choice="[DEC-0006]", touched="product-strategy.md"))
+        _, report = self.check()
+        self.assertEqual(report["problems"], [])
+
+    def test_log_may_name_withdrawn_records(self):
+        self.recorded(touched="product-strategy.md")
+        self.replace("outputs/revisions.md", "- Изменилось: [CLM-0001]",
+                     "- Изменилось: [CLM-0001] [CLM-0005] [OPT-0002]")
+        self.assertEqual(self.codes(), set())
+
+    def test_log_links_must_still_exist(self):
+        self.recorded(touched="product-strategy.md")
+        self.replace("outputs/revisions.md", "- Изменилось: [CLM-0001]", "- Изменилось: [CLM-0999]")
+        self.assertIn("CASE_INVALID", self.codes())
+
+    def test_log_is_checked_without_revision_decisions(self):
+        self.write("outputs/revisions.md", "# Не то")
+        self.assertIn("REVISION_FORMAT", self.codes())
+
+    def test_untouched_plan_needs_no_reapproval(self):
+        self.recorded(touched="product-strategy.md «Ценность»")
+        self.assertEqual(self.codes(), set())
+
+
 class Instructions(unittest.TestCase):
     def test_instructions_hold_no_ready_answers(self):
         names = ("мегафон", "яндекс", "сбер", "постомат", "озон", "wildberries")
@@ -727,6 +984,22 @@ class Instructions(unittest.TestCase):
         for name in ("research.md", "options.md", "strategies.md"):
             self.assertIn(name, text)
             self.assertTrue((ROOT / "agent/workflows" / name).is_file())
+
+    def test_revision_procedure_is_connected(self):
+        run_case = (ROOT / "agent/workflows/run-case.md").read_text(encoding="utf-8")
+        self.assertIn("revision.md", run_case)
+        path = ROOT / "agent/workflows/revision.md"
+        self.assertTrue(path.is_file())
+        text = path.read_text(encoding="utf-8")
+        for word in ("affected", "snapshot", "revisions.md", ".history"):
+            self.assertIn(word, text)
+
+    def test_revision_procedure_holds_no_ready_answers(self):
+        names = ("мегафон", "яндекс", "сбер", "постомат", "озон", "wildberries")
+        for name in ("workflows/revision.md", "workflows/strategies.md", "workflows/checkpoint.md"):
+            text = (ROOT / "agent" / name).read_text(encoding="utf-8").casefold()
+            for company in names:
+                self.assertNotIn(company, text)
 
     def test_sections_of_the_contract_match_the_tool(self):
         text = (ROOT / "agent/workflows/strategies.md").read_text(encoding="utf-8")

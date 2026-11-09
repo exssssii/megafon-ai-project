@@ -52,6 +52,12 @@ SEGMENTS = {
         "tariff_before": 4900, "tariff_after": 4900, "variable_cost": 1100,
     },
 }
+NEXT_MONTHS = ["2026-10", "2026-11", "2026-12"]
+NEXT_PERIOD = {
+    SOLO: {"new": [52, 54, 56], "churn": [40, 41, 39]},
+    SMALL: {"new": [14, 15, 16], "churn": [10, 11, 10]},
+    LARGE: {"new": [2, 3, 2], "churn": [1, 1, 1]},
+}
 HIDDEN_CHURN = (SOLO, "2026-02")
 HIDDEN_START = (SOLO, "2026-03")
 OUTAGE_TICKETS = [12, 9, 14, 11, 10, 13, 12, 15, 11, 16, 14, 212, 48, 19, 13, 12, 14, 11]
@@ -161,6 +167,37 @@ def write_metrics(path: Path, rows: list[dict]) -> None:
     book.save(path)
 
 
+def next_period_rows(rows: list[dict]) -> list[dict]:
+    """Continue the segment table for the months after the last one, same columns and tariffs."""
+    result = []
+    for name, segment in SEGMENTS.items():
+        last = [row for row in rows if row["segment"] == name][-1]
+        active = last["end"]
+        for index, month in enumerate(NEXT_MONTHS):
+            new, churned = NEXT_PERIOD[name]["new"][index], NEXT_PERIOD[name]["churn"][index]
+            result.append({
+                "month": month, "segment": name, "start": active, "new": new, "churn": churned,
+                "tariff": segment["tariff_after"], "end": active + new - churned,
+                "sheet_row": len(result) + 2,
+            })
+            active += new - churned
+    return result
+
+
+def write_next_metrics(path: Path, rows: list[dict]) -> None:
+    book = Workbook()
+    book.properties.created = book.properties.modified = FIXED_DATE
+    sheet = book.active
+    sheet.title = "Сегменты"
+    sheet.append(["Месяц", "Сегмент", "Активных на начало", "Новых", "Ушедших", "Тариф, руб./мес."])
+    for row in rows:
+        sheet.append([row["month"], row["segment"], row["start"], row["new"], row["churn"], row["tariff"]])
+    summary = book.create_sheet("Сводка")
+    summary.append(["Показатель", "Значение"])
+    summary.append([TRAINING_MARK, None])
+    book.save(path)
+
+
 def write_support_note(path: Path) -> None:
     document = Document()
     document.core_properties.created = document.core_properties.modified = FIXED_DATE
@@ -263,6 +300,8 @@ def retention_case(font: Path) -> None:
     rows = segment_rows()
     write_metrics(materials / "metrics.xlsx", rows)
     write_support_note(materials / "support-note.docx")
+    next_rows = next_period_rows(rows)
+    write_next_metrics(extra / "metrics-2026-q4.xlsx", next_rows)
 
     quarter = ["2026-07", "2026-08", "2026-09"]
     quarter_rows = [row for row in rows if row["month"] in quarter]
@@ -345,8 +384,34 @@ def retention_case(font: Path) -> None:
         "2026-07…2026-09", "сумма ушедших / сумма активных на начало месяцев",
         "metrics.xlsx, лист «Сегменты», месяцы 2026-07…2026-09 по всем сегментам", 0.05,
     ))
+    next_numbers = [
+        number(
+            f"churn_{slug}_next_period", f"Месячный отток, {name}, октябрь–декабрь 2026", churn_rate(next_rows, name, NEXT_MONTHS),
+            "%", "2026-10…2026-12", "сумма ушедших / сумма активных на начало",
+            span(next_rows, name, NEXT_MONTHS).replace("metrics.xlsx", "metrics-2026-q4.xlsx"), 0.05,
+        )
+        for name, slug in ((SOLO, "solo"), (SMALL, "small"))
+    ]
     write_control("retention-smb", {
         "numbers": numbers,
+        "revision": {
+            "material": "extra/metrics-2026-q4.xlsx",
+            "numbers": next_numbers,
+            "contested": [
+                "Высокий отток одиночек после смены тарифа устойчив (около 6,3 % в месяц). Новые месяцы показывают возврат к уровню до смены тарифа",
+            ],
+            "confirmed": [
+                "Мартовский всплеск оттока малых салонов был разовым. Новые месяцы показывают обычный уровень 2026 года",
+            ],
+            "affected": [
+                "Всё, что опирается на устойчивость оттока одиночек: причина через тариф, возврат прежнего тарифа, отказ от сегмента одиночек, расчёты и пороги на этом числе",
+            ],
+            "unaffected": [
+                "Всё, что опирается на малые салоны и крупные салоны: вывод о разовом всплеске, ставка на салоны",
+                "Коммуникационная часть, не зависящая от оттока одиночек",
+            ],
+            "review_condition": "Срабатывает условие, которое ставит под сомнение устойчивость оттока (возврат к уровню до смены тарифа, ниже N). Условие на ухудшение (выше N) не срабатывает, и это верный ответ. В обоих случаях агент называет сверенное условие с числами",
+        },
         "derivable": derivable,
         "not_computable": [
             {"id": "churn_share_by_cause", "label": "Доля оттока по причинам", "reason": "Причины ухода не записываются, опроса ушедших нет"},

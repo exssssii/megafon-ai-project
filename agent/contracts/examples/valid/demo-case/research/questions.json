@@ -22,7 +22,7 @@
       "question": "Окупается ли пункт обмена?",
       "affects": "Выбор между сохранением и закрытием",
       "needed_evidence": "Доходы пункта за год",
-      "status": "open",
+      "status": "partial",
       "findings": [
         "CALC-0002"
       ],

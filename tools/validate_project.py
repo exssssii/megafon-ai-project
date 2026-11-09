@@ -1003,9 +1003,10 @@ class Validator:
             if malformed:
                 self.error("OUTPUT_LINK", file, None, "a bracket looks like a record reference but is malformed")
             for link in links:
-                self.check_output_link(file, link)
+                self.check_output_link(file, link, live=file != "outputs/revisions.md")
 
-    def check_output_link(self, file, link):
+    def check_output_link(self, file, link, live=True):
+        # The revision log is append-only history: it may name records withdrawn or superseded later.
         kind = prefix_of(link)
         if kind in ("ACT", "CKP"):
             self.error("OUTPUT_LINK", file, link, "link to an action or checkpoint")
@@ -1013,6 +1014,8 @@ class Validator:
             return
         elif link not in self.seen:
             self.error("OUTPUT_LINK", file, link, "link to a record that does not exist")
+        elif not live:
+            return
         elif self.revoked(link):
             self.error("WITHDRAWN_USED", file, link, "text uses a withdrawn record")
         elif kind == "CLM" and link in self.index and self.index[link]["status"] in ("unconfirmed", "contested"):
