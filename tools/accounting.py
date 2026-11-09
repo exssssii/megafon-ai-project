@@ -72,13 +72,16 @@ def seconds(later: datetime, earlier: datetime) -> int:
 
 
 def first_result(options: list[dict], lines: list[dict]) -> tuple[str, datetime, bool] | None:
-    """The earliest option that was not withdrawn: the first thing a decision can rest on.
+    """The earliest option shown to the person: the first thing a decision could rest on at the time.
+
+    An option withdrawn later still counts: it was useful when it was written, and a changed condition
+    does not move the moment the first options appeared.
 
     The time comes from the end of the action that wrote the option: the utility stamps it. The agent writes
     `created_at` of the record itself, so that time is used only when no action names the option, and is marked.
     """
     active = {record["id"]: record for record in options
-              if record.get("record_status") != "withdrawn" and isinstance(record.get("id"), str)}
+              if isinstance(record.get("id"), str)}
     stamped = [(at, ref) for line in lines
                if line.get("phase") == "end" and line.get("outcome") == "completed" and "human" not in line
                and isinstance(line.get("result_refs"), list)

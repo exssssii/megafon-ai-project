@@ -94,11 +94,11 @@ class Time(unittest.TestCase):
                          (50 * 60, 25 * 60))
         self.assertEqual(summary["time"]["first_result"], "OPT-0002")
 
-    def test_withdrawn_option_is_not_the_first_result(self):
+    def test_withdrawn_option_is_still_the_first_result(self):
         lines = act("ACT-0001", "model", 0, 60)
         summary = ac.summarize(lines, [option("OPT-0001", 10, "withdrawn"), option("OPT-0002", 40)])
         self.assertEqual((summary["time"]["first_result"], summary["time"]["time_to_first_result_seconds"]),
-                         ("OPT-0002", 40 * 60))
+                         ("OPT-0001", 10 * 60))
 
     def test_no_options_means_no_first_result(self):
         summary = ac.summarize(act("ACT-0001", "model", 0, 5), [])
@@ -116,11 +116,11 @@ class Time(unittest.TestCase):
                          ("OPT-0001", 30 * 60))
         self.assertNotIn("FIRST_RESULT_UNSTAMPED", summary["warnings"])
 
-    def test_withdrawn_option_in_an_action_does_not_count(self):
+    def test_withdrawn_option_in_an_action_keeps_its_stamp(self):
         lines = act("ACT-0001", "model", 0, 10, refs=["OPT-0001"]) + act("ACT-0002", "model", 11, 20, refs=["OPT-0002"])
         summary = ac.summarize(lines, [option("OPT-0001", 5, "withdrawn"), option("OPT-0002", 15)])
         self.assertEqual((summary["time"]["first_result"], summary["time"]["time_to_first_result_seconds"]),
-                         ("OPT-0002", 20 * 60))
+                         ("OPT-0001", 10 * 60))
 
     def test_only_a_finished_step_of_the_agent_stamps_the_result(self):
         for lines in (act("ACT-0001", "model", 10, 100, outcome="failed", refs=["OPT-0001"]),
