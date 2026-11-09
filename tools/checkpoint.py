@@ -745,6 +745,7 @@ def save(root: Path, request: dict, acknowledge_loss: bool) -> dict:
 
     remove_stale_temporaries(root)
     artifacts = collect_artifacts(root)
+    silent = journal_silent(root, current, artifacts)
     snapshots_new = write_snapshots(root, artifacts)
 
     open_items = list(request["open_items"]) + ([loss_note(lost)] if lost else [])
@@ -781,7 +782,33 @@ def save(root: Path, request: dict, acknowledge_loss: bool) -> dict:
                       id=document["id"], findings=finding_list(after.errors))
     return {"status": "done", "id": document["id"], "seq": document["seq"], "previous": document["previous"],
             "artifacts": len(artifacts), "snapshots_written": snapshots_new, "lost_hidden": hidden,
-            "warnings": sorted({f.code for f in after.warnings})}
+            "warnings": sorted({f.code for f in after.warnings} | ({"JOURNAL_SILENT"} if silent else set()))}
+
+
+ACCOUNTING_REPORT = "outputs/accounting.md"
+
+
+def journal_silent(root: Path, current: dict | None, artifacts: dict) -> bool:
+    """True when the case texts changed since the current checkpoint but the journal has no line after it.
+
+    Time and errors are taken from the journal, so a stretch of work without a line is invisible in the
+    accounting. The save itself goes on: the warning tells the agent to say so.
+    """
+    if current is None:
+        return False
+    # The accounting report is rewritten from the journal itself and is no work of its own.
+    pinned = {artifact["path"]: artifact["sha256"] for artifact in current["artifacts"]
+              if artifact["path"] != ACCOUNTING_REPORT}
+    if pinned == {rel: digest for rel, digest in artifacts.items() if rel != ACCOUNTING_REPORT}:
+        return False
+    since = parse_time(current["created_at"])
+    if since is None or since.tzinfo is None:
+        return False
+    for line in read_journal(root):
+        moment = parse_time(line.get("at"))
+        if moment is not None and moment.tzinfo is not None and moment >= since:
+            return False
+    return True
 
 
 def cmd_save(args) -> int:

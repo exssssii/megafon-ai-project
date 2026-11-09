@@ -150,6 +150,48 @@ def damaged_kept(case: pathlib.Path, sha: str) -> bool:
                for path in folder.rglob("*") if path.is_file())
 
 
+# Words of the agent's own make-up that the user should not see: names of its tools, files and
+# procedures. A hit is shown for a person to judge, it does not fail the run.
+INTERNAL = re.compile(r"\b[\w-]+\.py\b|\btools/|\bagent/|\.venv|процедур\w*|инструкци\w*|утилит\w*|"
+                      r"репозитори\w*|checkpoint|веб-инструмент\w*|через модель|"
+                      r"\b(?:CKP|ACT|DEC|OPT|CLM|CALC|SRC)-\d+",
+                      re.IGNORECASE)
+
+
+def internal_words(text: str) -> list[str]:
+    return sorted({match.group(0).lower() for match in INTERNAL.finditer(text)})
+
+
+def user_plugins(plugins) -> list[str]:
+    """Plugins of the init event that do not ship with the environment itself."""
+    names = []
+    for plugin in plugins or []:
+        if isinstance(plugin, dict):
+            if plugin.get("path") == "builtin" or str(plugin.get("source", "")).endswith("@builtin"):
+                continue
+            names.append(str(plugin.get("name")))
+        else:
+            names.append(str(plugin))
+    return names
+
+
+def runtime_lines(case: pathlib.Path) -> list[str]:
+    """Starts of the journal that carry the environment keys, and how many of them lack its version."""
+    path = case / "state/actions.jsonl"
+    if not path.exists():
+        return ["runtime_version none"]
+    given = missing = 0
+    for line in path.read_text(encoding="utf-8-sig", errors="replace").splitlines():
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(entry, dict) and isinstance(entry.get("runtime"), dict):
+            given += 1
+            missing += entry["runtime"].get("version") is None
+    return [f"runtime_version given={given} missing={missing}"]
+
+
 def fault_lines(results: pathlib.Path, case: pathlib.Path) -> list[str]:
     lines = [f"break {path.name.removesuffix('.break.txt')}: {path.read_text(encoding='utf-8-sig').strip()}"
              for path in sorted(results.glob("*.break.txt"))]
@@ -213,6 +255,7 @@ def read_logs(results: pathlib.Path, out: list[str]) -> None:
     traces = 0
     contexts = []
     init = None
+    extra = []
     for log in sorted(results.glob("*.jsonl")):
         text = log.read_text(encoding="utf-8-sig", errors="replace")
         for match in re.finditer(r"superpowers|plugins[\\/]+cache", text):
@@ -232,10 +275,13 @@ def read_logs(results: pathlib.Path, out: list[str]) -> None:
             if isinstance(event, dict) and event.get("type") == "system" and event.get("subtype") == "init":
                 init = (len(event.get("skills") or []), [m.get("name") for m in event.get("mcp_servers") or []],
                         [x.get("name") if isinstance(x, dict) else x for x in event.get("plugins") or []])
+                extra = user_plugins(event.get("plugins"))
         log.with_suffix(".final.txt").write_text(final, encoding="utf-8")
         first = final.splitlines()[0].strip() if final else ""
-        out.append(f"{log.stem}: mode_line={first == 'Режим: продукт.'} status_block={'Этап:' in final and 'Жду от вас:' in final}")
+        out.append(f"{log.stem}: mode_line={first == 'Режим: продукт.'} status_block={'Этап:' in final and 'Жду от вас:' in final}"
+                   f" internal_words={internal_words(final)}")
     out.append(f"init skills, mcp, plugins: {init}")
+    out.append(f"user_plugins {extra}")
     out.append(f"plugin_traces {traces}")
     out.extend(contexts[:12])
 
@@ -284,6 +330,7 @@ def main() -> int:
     carried = [str(p) for p in pathlib.Path(".").rglob("*")
                if ".venv" not in p.parts and "inbox" not in p.parts and args.marker in p.name]
     out.append(f"marker_in_file_names {carried}")
+    out.extend(runtime_lines(projects / args.case))
     out.extend(fault_lines(results, projects / args.case))
     canary = canary_seen(results, projects, os.environ.get("LIVE_RUN_NOTE", ""))
     out.append(f"canary_seen {canary}")

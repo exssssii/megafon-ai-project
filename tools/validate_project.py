@@ -821,6 +821,10 @@ class Validator:
         for decision in decisions:
             if decision.get("supersedes"):
                 self.ref(decision["supersedes"], {"DEC"}, file, decision["id"])
+            if decision["proposal"] is None and decision.get("choice") is None:
+                # A replaced decision was once a proposal or a choice: an empty record only marks
+                # a choice as void, and that is what a replacement with supersedes says.
+                self.error("DECISION_CHOICE_STATE", file, decision["id"], "neither a proposal nor a choice")
             if is_active(decision["id"], decision):
                 self.check_decision(file, decision)
         self.check_supersede_chains(file, decisions)

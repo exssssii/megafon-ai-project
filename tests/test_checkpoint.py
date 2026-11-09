@@ -567,6 +567,23 @@ class SaveCheckpoint(DemoCaseTestCase):
         self.save()
         self.assertEqual((self.case / JOURNAL).read_bytes(), before)
 
+    def test_changed_texts_without_a_journal_line_since_the_last_save_are_named(self):
+        self.save()
+        (self.case / "outputs" / "accounting.md").write_text("Отчёт\n", encoding="utf-8")
+        code, result = self.save()
+        self.assertEqual(code, 0)
+        self.assertNotIn("JOURNAL_SILENT", result["warnings"], "the accounting report is no work of its own")
+        brief = self.case / "brief.md"
+        brief.write_text(brief.read_text(encoding="utf-8") + "\nПравка\n", encoding="utf-8")
+        code, result = self.save()
+        self.assertEqual((code, result["id"]), (0, "CKP-0005"))
+        self.assertIn("JOURNAL_SILENT", result["warnings"])
+        brief.write_text(brief.read_text(encoding="utf-8") + "\nЕщё правка\n", encoding="utf-8")
+        self.assertEqual(run("action", "start", self.case, "--kind", "model", "--tool", "chat",
+                             "--environment", "codex")[0], 0)
+        code, result = self.save()
+        self.assertNotIn("JOURNAL_SILENT", result["warnings"])
+
     def test_first_save_in_a_case_without_texts(self):
         case = self.tmp / "empty-case"
         write_json(case / "case.json", {"format_version": 1, "case_id": "empty-case", "title": "t",

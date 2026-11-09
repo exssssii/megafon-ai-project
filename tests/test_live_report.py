@@ -206,3 +206,28 @@ class AfterFailure(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RunHygiene(unittest.TestCase):
+    def test_internal_words_of_the_agent_are_named(self):
+        text = "Тексты сохранены через веб-инструмент, по процедуре tools/calc.py; итог в outputs/plan.md."
+        self.assertEqual(report.internal_words(text), ["calc.py", "tools/", "веб-инструмент", "процедуре"])
+        self.assertEqual(report.internal_words("Отток одиночек 6,27 % за январь–сентябрь."), [])
+        self.assertEqual(report.internal_words("Ваш выбор DEC-0005 записан, расчёт CALC-0012."), ["calc-0012", "dec-0005"])
+
+    def test_plugins_that_ship_with_the_environment_are_not_the_user_s(self):
+        plugins = [{"name": "cc-plugin-telemetry", "path": "builtin", "source": "cc-plugin-telemetry@builtin"},
+                   {"name": "superpowers", "path": "C:/cache/superpowers", "source": "superpowers@market"}, "loose"]
+        self.assertEqual(report.user_plugins(plugins), ["superpowers", "loose"])
+        self.assertEqual(report.user_plugins(None), [])
+
+    def test_runtime_version_is_counted_on_the_starts_that_carry_the_environment(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            case = Path(tmp)
+            self.assertEqual(report.runtime_lines(case), ["runtime_version none"])
+            (case / "state").mkdir()
+            lines = [{"phase": "start", "runtime": {"version": None, "access": "unknown"}},
+                     {"phase": "end"}, {"phase": "start", "runtime": {"version": "2.1.304"}}, "broken"]
+            (case / "state/actions.jsonl").write_text(
+                "\n".join(x if isinstance(x, str) else json.dumps(x) for x in lines), encoding="utf-8")
+            self.assertEqual(report.runtime_lines(case), ["runtime_version given=2 missing=1"])

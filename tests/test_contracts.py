@@ -826,6 +826,7 @@ class BranchCoverage(Mutating):
         cases = [
             ("case id differs from folder", lambda: self.edit("case.json", lambda d: d.update(case_id="other-case")), ["CASE_INVALID"], []),
             ("replaced decision not superseded", lambda: self.rec(DECISIONS, "DEC-0001", lambda r: r.update(status="chosen")), ["DECISION_SUPERSEDE"], []),
+            ("superseded with neither proposal nor choice", lambda: self.rec(DECISIONS, "DEC-0001", lambda r: (r.update(proposal=None), r.pop("choice", None))), ["DECISION_CHOICE_STATE"], []),
             ("superseded without replacement", decision(lambda r: (r.pop("supersedes"), r.pop("change_reason"))), ["DECISION_SUPERSEDE"], []),
             ("proposal made by a human action", decision(lambda r: r["proposal"].update(action_id="ACT-0008")), ["DECISION_NOT_HUMAN"], []),
             ("unfinished human_input", pop_end("ACT-0008"), ["DECISION_NOT_HUMAN"], []),
