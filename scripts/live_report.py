@@ -175,6 +175,54 @@ def user_plugins(plugins) -> list[str]:
     return names
 
 
+SKILL_FILE = re.compile(r"skills[\\/]+([a-z0-9-]+)[\\/]+SKILL\.md")
+
+
+def skills_of(event) -> list[str]:
+    """Skills listed in the start event of Claude Code."""
+    if not isinstance(event, dict) or event.get("type") != "system" or event.get("subtype") != "init":
+        return []
+    return [str(s.get("name")) if isinstance(s, dict) else str(s) for s in event.get("skills") or []]
+
+
+def skill_calls(event) -> list[str]:
+    """Skills the agent took in this event: the Skill tool of Claude Code or a read of a SKILL.md file."""
+    names = []
+    if isinstance(event, dict) and event.get("type") == "assistant":
+        for part in (event.get("message") or {}).get("content") or []:
+            if isinstance(part, dict) and part.get("type") == "tool_use" and part.get("name") == "Skill":
+                skill = (part.get("input") or {}).get("skill")
+                if isinstance(skill, str):
+                    names.append(skill)
+    for call in tool_calls(event):
+        names += SKILL_FILE.findall(call.text)
+    return names
+
+
+def skill_line(results: pathlib.Path, seen: list[str] | None, called: list[str]) -> str:
+    """One report line: skills the run saw, those not of the project, and those it took."""
+    project, recorded, claude = [], None, False
+    checks = results / "checks.txt"
+    for line in (checks.read_text(encoding="utf-8-sig").splitlines() if checks.exists() else []):
+        if line.startswith("skills "):
+            fields = dict(part.split("=", 1) for part in line.split()[2:] if "=" in part)
+            project = [x for x in fields.get("project", "").split(",") if x]
+            value = line.split(" seen=", 1)[1] if " seen=" in line else "error"
+            claude = value == "see the start event"
+            # A failed or skipped probe is not an empty list: nothing was checked.
+            if not claude and value not in ("dry run", "error"):
+                recorded = [x for x in value.split(",") if x]
+    taken = list(dict.fromkeys(called))
+    if seen is None and not claude:
+        seen = recorded
+    if seen is None:
+        return f"skills seen=unknown other=unknown called={taken if claude else 'unknown'}"
+    other = [x for x in seen if x not in project]
+    # Codex has no start event; a skill it knows it may follow without reading the file again.
+    shown = taken if taken or claude or not seen else "unknown"
+    return f"skills seen={seen} other={other} called={shown}"
+
+
 def runtime_lines(case: pathlib.Path) -> list[str]:
     """Starts of the journal that carry the environment keys, and how many of them lack its version."""
     path = case / "state/actions.jsonl"
@@ -256,6 +304,8 @@ def read_logs(results: pathlib.Path, out: list[str]) -> None:
     contexts = []
     init = None
     extra = []
+    seen = None
+    called = []
     for log in sorted(results.glob("*.jsonl")):
         text = log.read_text(encoding="utf-8-sig", errors="replace")
         for match in re.finditer(r"superpowers|plugins[\\/]+cache", text):
@@ -276,12 +326,15 @@ def read_logs(results: pathlib.Path, out: list[str]) -> None:
                 init = (len(event.get("skills") or []), [m.get("name") for m in event.get("mcp_servers") or []],
                         [x.get("name") if isinstance(x, dict) else x for x in event.get("plugins") or []])
                 extra = user_plugins(event.get("plugins"))
+                seen = skills_of(event)
+            called += skill_calls(event)
         log.with_suffix(".final.txt").write_text(final, encoding="utf-8")
         first = final.splitlines()[0].strip() if final else ""
         out.append(f"{log.stem}: mode_line={first == 'Режим: продукт.'} status_block={'Этап:' in final and 'Жду от вас:' in final}"
                    f" internal_words={internal_words(final)}")
     out.append(f"init skills, mcp, plugins: {init}")
     out.append(f"user_plugins {extra}")
+    out.append(skill_line(results, seen, called))
     out.append(f"plugin_traces {traces}")
     out.extend(contexts[:12])
 

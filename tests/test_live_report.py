@@ -204,6 +204,73 @@ class AfterFailure(unittest.TestCase):
         self.assertIn("break c2: broken inside the stage", report.fault_lines(self.results, self.case))
 
 
+class Skills(unittest.TestCase):
+    def test_skills_seen_at_start_are_named(self):
+        event = {"type": "system", "subtype": "init", "skills": ["resuming-case", {"name": "design"}]}
+        self.assertEqual(report.skills_of(event), ["resuming-case", "design"])
+        self.assertEqual(report.skills_of({"type": "result"}), [])
+
+    def test_skill_calls_in_claude_code_are_counted(self):
+        event = {"type": "assistant", "message": {"content": [
+            {"type": "tool_use", "name": "Skill", "input": {"skill": "revising-on-new-data"}},
+            {"type": "tool_use", "name": "Read", "input": {"file_path": ".claude/skills/resuming-case/SKILL.md"}},
+            {"type": "tool_use", "name": "Read", "input": {"file_path": "agent/workflows/revision.md"}},
+        ]}}
+        self.assertEqual(report.skill_calls(event), ["revising-on-new-data", "resuming-case"])
+
+    def test_codex_reads_the_skill_file(self):
+        item = {"type": "command_execution", "command": r"Get-Content .agents\skills\running-interviews\SKILL.md"}
+        self.assertEqual(report.skill_calls({"type": "item.completed", "item": item}), ["running-interviews"])
+        self.assertEqual(report.skill_calls({"type": "item.started", "item": item}), [])
+
+    def test_report_line_lists_skills(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            results = Path(tmp)
+            (results / "checks.txt").write_text("skills on project=resuming-case,running-interviews seen=see the start event\n",
+                                                encoding="utf-8")
+            init = {"type": "system", "subtype": "init", "skills": ["resuming-case", "running-interviews", "design"]}
+            call = {"type": "assistant", "message": {"content": [
+                {"type": "tool_use", "name": "Skill", "input": {"skill": "resuming-case"}}]}}
+            (results / "c1.jsonl").write_text(json.dumps(init) + "\n" + json.dumps(call), encoding="utf-8")
+            out = []
+            report.read_logs(results, out)
+            self.assertIn("skills seen=['resuming-case', 'running-interviews', 'design'] other=['design'] "
+                          "called=['resuming-case']", out)
+
+    def test_codex_without_a_skill_file_read_is_unknown(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            results = Path(tmp)
+            (results / "checks.txt").write_text("skills on project=resuming-case seen=resuming-case\n", encoding="utf-8")
+            item = {"type": "command_execution", "command": "ls"}
+            (results / "c1.jsonl").write_text(json.dumps({"type": "item.completed", "item": item}), encoding="utf-8")
+            out = []
+            report.read_logs(results, out)
+            self.assertIn("skills seen=['resuming-case'] other=[] called=unknown", out)
+
+
+    def skill_report(self, checks, *events):
+        with tempfile.TemporaryDirectory() as tmp:
+            results = Path(tmp)
+            if checks is not None:
+                (results / "checks.txt").write_text(checks + "\n", encoding="utf-8")
+            (results / "c1.jsonl").write_text("\n".join(json.dumps(e) for e in events), encoding="utf-8")
+            out = []
+            report.read_logs(results, out)
+            return [line for line in out if line.startswith("skills ")]
+
+    def test_failed_codex_probe_is_not_a_clean_list(self):
+        self.assertEqual(self.skill_report("skills on project=resuming-case seen=error", {"type": "turn.completed"}),
+                         ["skills seen=unknown other=unknown called=unknown"])
+
+    def test_claude_without_a_start_event_is_unknown(self):
+        self.assertEqual(self.skill_report("skills on project=resuming-case seen=see the start event",
+                                           {"type": "result", "result": "x"}),
+                         ["skills seen=unknown other=unknown called=[]"])
+
+    def test_codex_with_skills_off_has_no_calls(self):
+        self.assertEqual(self.skill_report("skills off project=resuming-case seen=", {"type": "turn.completed"}),
+                         ["skills seen=[] other=[] called=[]"])
+
 if __name__ == "__main__":
     unittest.main()
 

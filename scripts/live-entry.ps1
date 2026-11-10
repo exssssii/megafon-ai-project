@@ -14,6 +14,9 @@
 # re-choice and everything after it from the same archive. Both take any commit and do
 # not count for acceptance.
 # -DryRun checks the clone, the stripping, the failures and the archives without any model.
+# Project skills (E14) are on and the skills built into the CLI are off, so a run sees exactly the
+# skills of .claude/skills or .agents/skills; -NoSkills turns the project skills off too, for the
+# comparison of a run with and without them. checks.txt records which way the run went.
 [CmdletBinding()]
 param(
     [ValidateSet('codex', 'claude')] [string] $Environment = 'codex',
@@ -25,6 +28,7 @@ param(
     [string] $Work = '',
     [string] $Handoff = '',
     [int] $KillMinutes = 15,
+    [switch] $NoSkills,
     [switch] $DryRun
 )
 $ErrorActionPreference = 'Stop'
@@ -317,18 +321,46 @@ function Thread-Id([string] $Log) {
     return ''
 }
 
+# Skills. Claude Code takes its settings as a file: a JSON string argument breaks on Windows.
+# The three overrides are skills of the plugins built into Claude Code 2.1.321; a skill that a
+# later version adds shows up in the report as not a project one.
+$skillSettings = Join-Path $Work 'claude-skills.json'
+[IO.File]::WriteAllText($skillSettings, '{"disableBundledSkills":true,"skillOverrides":{"design":"off","doctor":"off","plugin-authoring":"off"}}', $utf8)
+$projectSkills = @(Get-ChildItem -LiteralPath (Join-Path $clone '.agents/skills') -Directory -ErrorAction SilentlyContinue | ForEach-Object Name)
+$codexSkillFlags = @('--disable', 'plugins', '--disable', 'remote_plugin', '--disable', 'skill_search', '--disable', 'apps',
+    '-c', 'skills.bundled.enabled=false')
+if ($NoSkills -and $projectSkills) {
+    # TOML literal strings: double quotes inside an argument break in Windows PowerShell 5.1.
+    $codexSkillFlags += @('-c', ('skills.config=[' + (($projectSkills | ForEach-Object { "{name='$_',enabled=false}" }) -join ',') + ']'))
+}
+$seen = 'dry run'
+if ($Environment -eq 'claude') { $seen = 'see the start event' }
+elseif (-not $DryRun) {
+    # What the model would get, rendered without a model: proof on this machine that no personal skill is in.
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    $prompt = (& $Codex debug prompt-input @codexSkillFlags 'ok' 2>$null) -join "`n"
+    $probeCode = $LASTEXITCODE
+    $ErrorActionPreference = $previous
+    # The prompt comes as JSON, so its line breaks are the two characters \n.
+    $seen = (([regex]::Matches($prompt, '\\n- ([a-z0-9-]+): ') | ForEach-Object { $_.Groups[1].Value }) -join ',')
+    # A failed render and an empty list with skills on both leave isolation unchecked, not clean.
+    if ($probeCode -ne 0 -or -not $prompt -or (-not $seen -and -not $NoSkills)) { $seen = 'error' }
+}
+Note-Check "skills $(if ($NoSkills) { 'off' } else { 'on' }) project=$($projectSkills -join ',') seen=$seen"
+
 function Turn-Arguments([string] $Thread) {
     if ($Environment -eq 'claude') {
-        $arguments = @('-p', '--setting-sources', 'project', '--disable-slash-commands', '--strict-mcp-config',
+        $arguments = @('-p', '--setting-sources', 'project', '--settings', $skillSettings, '--strict-mcp-config',
             '--output-format', 'stream-json', '--verbose', '--model', $Model,
             '--allowedTools', 'Bash,Read,Write,Edit,Glob,Grep,WebSearch,WebFetch')
+        if ($NoSkills) { $arguments += '--disable-slash-commands' }
         if ($Thread) { $arguments += @('--resume', $Thread) }
     } else {
     # Codex downloads plugins of the account into any CODEX_HOME, an empty one included.
     $plugins = Join-Path $env:CODEX_HOME 'plugins'
     if (Test-Path -LiteralPath $plugins) { Remove-Item -LiteralPath $plugins -Recurse -Force }
-    $flags = @('--json', '--ignore-user-config', '--skip-git-repo-check', '-m', $Model,
-        '--disable', 'plugins', '--disable', 'remote_plugin', '--disable', 'skill_search', '--disable', 'apps',
+    $flags = @('--json', '--ignore-user-config', '--skip-git-repo-check', '-m', $Model) + $codexSkillFlags + @(
         '-c', "model_reasoning_effort=$Effort", '-c', 'web_search=live')
     # --approve-for-me belongs to exec and is rejected after the resume subcommand.
     if ($Thread) { $arguments = @('exec', '--approve-for-me', 'resume') + $flags + @($Thread, '-') }
