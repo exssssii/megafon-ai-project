@@ -176,7 +176,7 @@
       "status": "confirmed",
       "supports": [
         {
-          "source_id": "SRC-0005",
+          "source_id": "SRC-0006",
           "locator": {
             "kind": "paragraph",
             "index": 1

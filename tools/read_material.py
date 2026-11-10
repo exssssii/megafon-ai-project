@@ -29,7 +29,7 @@ from material_extract import (
     text_blocks,
 )
 import checkpoint
-from validate_project import is_http_url
+from validate_project import SYNTHETIC_PREFIX, is_http_url
 from web_fetch import FetchError, Page, fetch_page  # noqa: F401
 
 EXIT_OK, EXIT_NO_TEXT, EXIT_OVER_LIMIT, EXIT_REFUSED, EXIT_INTERNAL = 0, 2, 3, 4, 5
@@ -243,13 +243,35 @@ def public(report: dict) -> dict:
     return report | {"columns": columns}
 
 
+def in_place_path(case: Case, path: Path) -> str | None:
+    """Case-relative path of a file already stored under sources/, or None when it would be copied."""
+    if inside(path, case.root / "sources") and not path.is_symlink():
+        relative = path.resolve().relative_to(case.root.resolve()).as_posix()
+        if not UNSAFE_NAME.search(relative.replace("/", "")) and relative.split("/")[1] not in ("extracted", "incoming"):
+            return relative
+    return None
+
+
+def resolve_origin(case: Case, path: Path, given: str | None) -> str:
+    """The origin of a file: forced to synthetic under the interview prefix, never synthetic elsewhere."""
+    synthetic = (in_place_path(case, path) or "").startswith(SYNTHETIC_PREFIX)
+    if synthetic:
+        if given not in (None, "synthetic"):
+            raise Refused("файл в sources/interviews/synthetic-* регистрируется только с origin synthetic")
+        return "synthetic"
+    if given == "synthetic":
+        raise Refused("origin synthetic допустим только для файлов в sources/interviews/synthetic-*")
+    if given is None:
+        raise Refused("нужен --origin: user_provided, public_web или own_training")
+    return given
+
+
 def stored_path(case: Case, path: Path, sha256: str, source_id: str) -> tuple[str, Path | None]:
     """Return the case-relative path of the copy and the file created for it, if any."""
     sources = case.root / "sources"
-    if inside(path, sources) and not path.is_symlink():
-        relative = path.resolve().relative_to(case.root.resolve()).as_posix()
-        if not UNSAFE_NAME.search(relative.replace("/", "")) and relative.split("/")[1] not in ("extracted", "incoming"):
-            return relative, None
+    relative = in_place_path(case, path)
+    if relative is not None:
+        return relative, None
     name = UNSAFE_NAME.sub("_", path.name).lstrip(".") or f"material{path.suffix}"
     stem, suffix = Path(name).stem, Path(name).suffix
     target, attempt = sources / name, 1
@@ -279,9 +301,9 @@ def commit_new(case: Case, source_id: str, result: Extraction, copied: Path | No
         raise
 
 
-def repeat_add(case: Case, record: dict, args, options: Options, limits: dict) -> int:
+def repeat_add(case: Case, record: dict, args, options: Options, limits: dict, origin: str) -> int:
     allowed = args.allowed == "yes"
-    if record["origin"] != args.origin or record["allowed"] != allowed:
+    if record["origin"] != origin or record["allowed"] != allowed:
         raise Refused("файл уже зарегистрирован с другими origin или allowed", id=record["id"])
     ignored = []
     if record["title"] != args.title:
@@ -318,10 +340,11 @@ def cmd_add(args, limits: dict) -> int:
     kind = SUPPORTED[suffix]
     options = options_from(args)
     check_applicable(kind, options)
+    origin = resolve_origin(case, args.file, args.origin)
     sha256 = sha256_of(args.file)
     existing = case.active_match(sha256, kind)
     if existing is not None:
-        return repeat_add(case, existing, args, options, limits)
+        return repeat_add(case, existing, args, options, limits, origin)
     result = extract(args.file, limits, options)
     source_id = case.next_id()
     path, copied = stored_path(case, args.file, sha256, source_id)
@@ -333,7 +356,7 @@ def cmd_add(args, limits: dict) -> int:
         "type": kind,
         "title": args.title,
         "location": {"path": path},
-        "origin": args.origin,
+        "origin": origin,
         "allowed": args.allowed == "yes",
         "retrieved_at": stamp,
         "sha256": sha256,
@@ -573,7 +596,7 @@ def build_parser() -> Parser:
     add.add_argument("case", type=Path)
     add.add_argument("file", type=Path)
     add.add_argument("--title", required=True)
-    add.add_argument("--origin", required=True, choices=["user_provided", "public_web", "own_training"])
+    add.add_argument("--origin", choices=["user_provided", "public_web", "own_training", "synthetic"])
     add.add_argument("--allowed", required=True, choices=["yes", "no"])
     add.add_argument("--source-url")
     add_reading_options(add)

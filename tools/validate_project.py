@@ -37,13 +37,15 @@ ERROR_CODES = frozenset({
     "DECISION_MULTIPLE_ACTIVE", "ACTION_RETRY", "ACTION_ORDER", "ACTION_COST", "ACTION_HUMAN", "OUTPUT_LINK",
     "PATH_UNSAFE", "SCHEMA", "FORMAT_UNSUPPORTED", "FORMAT_MIXED", "CASE_INVALID",
     "FILE_CORRUPT", "CHECKPOINT_NONE_VALID", "CHECKPOINT_CLAIM", "LOCATOR_NOT_FOUND", "QUOTE_NOT_FOUND",
-    "CALC_MISMATCH", "TIME_IN_FUTURE",
+    "CALC_MISMATCH", "TIME_IN_FUTURE", "SYNTHETIC_NOT_EVIDENCE", "SYNTHETIC_PATH",
 })
 WARNING_CODES = frozenset({
     "BASIS_UNCONFIRMED", "SOURCE_PARTIAL", "ACTION_UNKNOWN", "JOURNAL_TORN",
     "CHECKPOINT_STALE", "CHECKPOINT_FALLBACK", "EXTRACT_MISSING", "CALC_UNVERIFIED",
 })
 ALL_CODES = ERROR_CODES | WARNING_CODES
+
+SYNTHETIC_PREFIX = "sources/interviews/synthetic-"
 
 SUPPORTED_VERSIONS = frozenset(
     json.loads((CONTRACTS / "versions.json").read_text(encoding="utf-8"))["supported"]
@@ -236,6 +238,10 @@ def is_active(record_id: str, record: dict) -> bool:
     if kind in ("SRC", "CALC", "Q", "OPT"):
         return record["record_status"] == "active"
     return True
+
+
+def is_synthetic_source(source: dict) -> bool:
+    return source.get("origin") == "synthetic"
 
 
 def is_weak_source(source: dict) -> bool:
@@ -572,6 +578,8 @@ class Validator:
             if "source_url" in record and not is_http_url(record["source_url"]):
                 self.error("PATH_UNSAFE", file, rid, "source_url is not an http or https address")
             path = location.get("path")
+            if is_synthetic_source(record) != (isinstance(path, str) and path.startswith(SYNTHETIC_PREFIX)):
+                self.error("SYNTHETIC_PATH", file, rid, "origin synthetic and a path under sources/interviews/synthetic- go together")
             if path is None:
                 continue
             if is_unsafe_path(path) or not path.startswith("sources/"):
@@ -654,6 +662,14 @@ class Validator:
             self.error("CLAIM_NO_BASIS", file, cid, "confirmed without supports")
         if confirmed and claim["kind"] in ("hypothesis", "forecast"):
             self.error("FACT_NOT_CONFIRMABLE", file, cid, f"a {claim['kind']} cannot be confirmed")
+        supporting = [sources[item["source_id"]] for item in claim["supports"]]
+        # Synthetic is a property of where the text came from, so a withdrawn conversation counts too.
+        if any(source is not None and is_synthetic_source(source)
+               for source in supporting) and (claim["kind"] != "hypothesis" or confirmed):
+            self.error("SYNTHETIC_NOT_EVIDENCE", file, cid, "a synthetic source supports only an unconfirmed hypothesis")
+        if any(sources[item["source_id"]] is not None and is_synthetic_source(sources[item["source_id"]])
+               for item in claim["contradicts"]):
+            self.error("SYNTHETIC_NOT_EVIDENCE", file, cid, "a synthetic source cannot contradict a claim")
         if claim["status"] == "contested" and not claim["contradicts"]:
             self.error("CLAIM_NOT_CONTESTED", file, cid, "contested without contradicts")
         if not confirmed:
@@ -740,6 +756,8 @@ class Validator:
                     source = self.ref(item["calculation_id"], {"CALC"}, file, cid)
                     target = item["calculation_id"]
                 resolved = resolved and source is not None
+                if source is not None and "source_id" in item and is_synthetic_source(source):
+                    self.error("SYNTHETIC_NOT_EVIDENCE", file, cid, f"input uses synthetic {target}")
                 if self.revoked(target):
                     self.error("WITHDRAWN_USED", file, cid, f"input uses withdrawn {target}")
             if "formula" not in calc["method"]:

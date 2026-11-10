@@ -1,11 +1,13 @@
 ﻿# Isolated live run of the entry scenarios (B07), the strategy scenarios (B08), the full
-# case or the continuation of a transferred case folder (B09), the hard cases (B11) in
-# Codex or Claude Code. Run from the repository root, on the commit under test. Works in
+# case or the continuation of a transferred case folder (B09), the hard cases (B11), the
+# interviews of E03 (the suite interviews: research up to its end, the question about the method
+# at the end of research, then the guide and the synthetic respondents; it does not count for
+# acceptance) in Codex or Claude Code. Run from the repository root, on the commit under test. Works in
 # PowerShell 5.1 and 7. Makes a clean clone next to the repository, runs the suite and writes results.zip
 # for review. The repository itself is not changed. Codex uses an empty CODEX_HOME with
 # its own login; that folder stays in place and is never added to the archive. Claude
 # Code uses project settings only, and the clone must not be under the home folder.
-# The suites e2e, continue, hard, faults and finish also strip the clone of everything that holds
+# The suites e2e, continue, hard, faults, finish and interviews also strip the clone of everything that holds
 # the answers of the acceptance case, its Git history included, and stop at the first
 # failed reply. The suite hard is the full case with the hard cases inside; faults repeats
 # only its last two steps from the archive saved after step 10, and finish repeats the
@@ -15,7 +17,7 @@
 [CmdletBinding()]
 param(
     [ValidateSet('codex', 'claude')] [string] $Environment = 'codex',
-    [ValidateSet('entry', 'strategy', 'e2e', 'continue', 'hard', 'faults', 'finish')] [string] $Suite = 'entry',
+    [ValidateSet('entry', 'strategy', 'e2e', 'continue', 'hard', 'faults', 'finish', 'interviews')] [string] $Suite = 'entry',
     [ValidateSet('retention-smb', 'direction-b2c')] [string] $Case = 'retention-smb',
     [string] $Codex = '',
     [string] $Model = '',
@@ -38,11 +40,11 @@ if (git status --porcelain) { throw 'The working tree has changes: commit or sta
 $commit = (git rev-parse HEAD).Trim()
 $fromFinal = $Suite -eq 'faults' -or $Suite -eq 'finish'
 $hardRun = $Suite -eq 'hard' -or $fromFinal
-$fullRun = $Suite -eq 'e2e' -or $Suite -eq 'continue' -or $hardRun
+$fullRun = $Suite -eq 'e2e' -or $Suite -eq 'continue' -or $Suite -eq 'interviews' -or $hardRun
 if (($Suite -eq 'continue' -or $fromFinal) -and -not $Handoff) { throw "The suite $Suite needs -Handoff with the transfer archive" }
 if ($Case -ne 'retention-smb' -and -not ($hardRun -or $Suite -eq 'continue')) { throw 'Only the suites hard, faults, finish and continue take -Case' }
 if ($Handoff) { $Handoff = (Resolve-Path -LiteralPath $Handoff).Path }
-if (-not $Work) { $Work = Join-Path (Split-Path -Parent $repo) $(switch ($Suite) { 'entry' { 'b07-live' } 'strategy' { 'b08-live' } 'e2e' { "b09-live-$Environment" } 'continue' { "b09-continue-$Environment-$Case" } 'hard' { "b11-live-$Environment-$Case" } 'faults' { "b11-faults-$Environment-$Case" } 'finish' { "b11-finish-$Environment-$Case" } }) }
+if (-not $Work) { $Work = Join-Path (Split-Path -Parent $repo) $(switch ($Suite) { 'entry' { 'b07-live' } 'strategy' { 'b08-live' } 'e2e' { "b09-live-$Environment" } 'continue' { "b09-continue-$Environment-$Case" } 'hard' { "b11-live-$Environment-$Case" } 'faults' { "b11-faults-$Environment-$Case" } 'finish' { "b11-finish-$Environment-$Case" } 'interviews' { "e03-interviews-$Environment" } }) }
 $Work = [IO.Path]::GetFullPath($Work)
 # A path like C:folder is relative to the current folder, and a clone inside the
 # repository makes its working tree dirty for every later run.
@@ -664,6 +666,28 @@ if ($Suite -eq 'e2e') {
     $t = Say 'c3-1' '' "Продолжи кейс $($facts.Name)."
     Finish-Case $t 'С прошлой записи учёта у меня ушло ещё около 5 минут.'
     Run-Faults
+} elseif ($Suite -eq 'interviews') {
+    # --- TO AGREE WITH THE USER BEFORE THE RUN (E03) -------------------------------------
+    # The text of the reply that creates a gap about people (a question of the research on
+    # the opinions of people, with no data on it). Generic: written without the case materials.
+    $peopleGapReply = 'Ещё вопрос: станут ли владельцы небольших салонов на самом деле платить за новый тариф? Данных об этом у нас нет, ни опросов, ни продаж. Добавь это как открытый вопрос исследования.'
+    # The reply that corrects one persona card (the name of the persona is not fixed in advance).
+    $cardFixReply = 'Поправь карточку самого осторожного персонажа (скептика): у него нет собственного бюджета на такие сервисы, решение о покупке принимает только владелец сети. Проведи с ним беседу заново.'
+    # ---------------------------------------------------------------------------------------
+    $request = [IO.File]::ReadAllText((Join-Path $clone "inbox\$caseId\request.md"), $utf8).Replace('`materials/', "``inbox/$caseId/materials/")
+    $t = Say 'i1-1' '' "$request`n`nНазови кейс $caseId."
+    Copy-Item -LiteralPath (Join-Path $held 'saved-page.md') -Destination (Join-Path $clone 'inbox')
+    $null = Say 'i1-2' $t 'Бриф утверждаю. Если что-то неясно, прими разумное допущение и назови его. Вот ещё сохранённая страница партнёра: inbox/saved-page.md, учти её как материал. Исследуй по материалам и остановись в конце исследования: к вариантам не переходи и сам ничего не выбирай.'
+    $null = Say 'i2' $t $peopleGapReply
+    $null = Say 'i3' $t 'Оба способа: и гайд для живых интервью, и модельные собеседники.'
+    $null = Say 'i4' $t $cardFixReply
+    $null = Say 'i5' $t 'Проверь выход из этапа research ещё раз и скажи, что осталось. К вариантам пока не переходи.'
+    if (-not $script:halted) {
+        $ErrorActionPreference = 'Continue'
+        & $python 'tools/gate.py' check "projects/$caseId" research *> $null
+        Note-Check "gate_research_final $LASTEXITCODE"
+        $ErrorActionPreference = 'Stop'
+    }
 } elseif ($Suite -eq 'continue') {
     Load-Handoff
     $t = Say 'h1' '' "Продолжи кейс $($facts.Name)."

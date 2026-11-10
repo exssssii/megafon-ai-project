@@ -1,3 +1,5 @@
 {
-  "warnings": []
+  "warnings": [
+    {"code": "BASIS_UNCONFIRMED", "file": "outputs/commitments.md", "id": "CLM-0009"}
+  ]
 }

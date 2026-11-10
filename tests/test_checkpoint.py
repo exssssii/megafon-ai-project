@@ -16,6 +16,8 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
 import validate_project as vp  # noqa: E402
+sys.path.insert(0, str(ROOT / "tests"))
+from demo_plain import copy_plain_demo  # noqa: E402
 
 DEMO = ROOT / "agent" / "contracts" / "examples" / "valid" / "demo-case"
 CKP_DIR = "state/checkpoints"
@@ -48,7 +50,7 @@ class CaseTestCase(unittest.TestCase):
         self.tmp = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
         self.case = self.tmp / "demo-case"
-        shutil.copytree(DEMO, self.case)
+        copy_plain_demo(DEMO, self.case)
 
     def codes(self, case=None):
         report = vp.validate_case(case or self.case)
@@ -296,7 +298,7 @@ class ActionJournal(EmptyCaseTestCase):
 
     def test_human_writes_both_lines_and_validates(self):
         case = self.tmp / "demo-case"
-        shutil.copytree(DEMO, case)
+        copy_plain_demo(DEMO, case)
         code, result = run("action", "human", case, "--tool", "chat", "--environment", "codex", "--result-ref", "DEC-0002")
         self.assertEqual((code, result["id"]), (0, "ACT-0013"))
         start, end = journal_lines(case)[-2:]
@@ -1099,7 +1101,7 @@ class MovedCase(unittest.TestCase):
         parent = tmp / "Мои кейсы" / "папка 1"
         parent.mkdir(parents=True)
         case = parent / "demo-case"
-        shutil.copytree(DEMO, case)
+        copy_plain_demo(DEMO, case)
         reports = []
 
         def call(*argv):
@@ -1417,7 +1419,7 @@ class KillMatrix(unittest.TestCase):
     def fresh(self, prepare=None):
         self.counter += 1
         case = self.tmp / f"run-{self.counter}" / "demo-case"
-        shutil.copytree(DEMO, case)
+        copy_plain_demo(DEMO, case)
         write_json(case.parent / "request.json", REQUEST)
         if prepare:
             prepare(case)

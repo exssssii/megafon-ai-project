@@ -22,7 +22,7 @@ from calc_engine import CalcError, number_matches, numbers_in_text, round_half_u
 from checkpoint import Parser, Refused, UsageError
 from outputs_md import STATUS_CHOSEN_RE, STATUS_PRELIMINARY_RE, is_status_line, split_sections
 from revision import REVISIONS, parse_revisions
-from validate_project import BRACKET_RE, ID_RE, Validator, is_active, prefix_of
+from validate_project import BRACKET_RE, ID_RE, Validator, is_active, is_synthetic_source, prefix_of
 
 EXIT_OK, EXIT_PROBLEMS, EXIT_REFUSED, EXIT_INTERNAL = 0, 1, 4, 5
 ACCOUNTING_REPORT = "outputs/accounting.md"
@@ -38,6 +38,7 @@ PRODUCT = "outputs/product-strategy.md"
 COMMUNICATION = "outputs/communication-strategy.md"
 PLAN = "outputs/validation-plan.md"
 COMMITMENTS = "outputs/commitments.md"
+GUIDE = "outputs/interview-guide.md"
 HISTORY = "outputs/.history"
 OPTION_REGISTRY = "decisions/options.json"
 QUESTION_REGISTRY = "research/questions.json"
@@ -83,6 +84,15 @@ RANGE_LINK_RE = re.compile(r"\s*(?:[–—-]|до)\s*")
 YEAR_WORD_RE = re.compile(r"\s*(?:гг?\.|год|года|году|годы|годах|годов)(?![а-яё])")
 YEAR_RANGE_RE = re.compile(r"[–—-]\d{4}" + YEAR_WORD_RE.pattern)
 HEADING_RE = re.compile(r"#{1,6}\s")
+GUIDE_SECTIONS = ("Кого спрашивать", "Согласие и данные")
+GUIDE_STATUS_RE = re.compile(r"Статус: способ выбран \[(DEC-[0-9]{4,})\]")
+GUIDE_QUESTION_RE = re.compile(r"Q-[0-9]{4,}\b")
+GUIDE_QUESTION_HEAD_RE = re.compile(r"(Q-[0-9]{4,})\.\s*\S")
+SYNTHETIC_MARK = "(синтетика)"
+SYNTHETIC_MARK_RE = re.compile(r"\s*" + re.escape(SYNTHETIC_MARK))
+MAX_SYNTHETIC_SESSIONS = 3
+MAX_INTERVIEW_QUESTIONS = 10
+QUESTION_SECTION_PREFIX = "Вопрос "
 MAX_ROUNDING_DIGITS = 10
 
 
@@ -284,6 +294,12 @@ class Gate:
         self.options = [r for r in validator.registries["OPT"] if is_active(r["id"], r)]
         self.all_decisions = list(validator.registries["DEC"])
         self.decisions = [r for r in self.all_decisions if is_active(r["id"], r)]
+        self.all_sources = list(validator.registries["SRC"])
+        self.all_claims = list(validator.registries["CLM"])
+        self.all_calculations = list(validator.registries["CALC"])
+        self.sources = [r for r in self.all_sources if is_active(r["id"], r)]
+        self.claims = [r for r in self.all_claims if is_active(r["id"], r)]
+        self.calculations = [r for r in self.all_calculations if is_active(r["id"], r)]
         self.direction = self.active_decision("direction")
         self.texts: dict[str, list[str] | None] = {}
 
@@ -326,6 +342,128 @@ class Gate:
             if contested and not gap:
                 result.problem("RESEARCH_HIDDEN_CONFLICT", QUESTION_REGISTRY, qid,
                                f"contested finding without a gap: {', '.join(contested)}")
+        self.check_interviews()
+
+    def synthetic_sources(self) -> list[dict]:
+        """Active synthetic conversations: the ones the session limits and the method date apply to."""
+        return [source for source in self.sources if is_synthetic_source(source)]
+
+    def synthetic_based(self) -> set[str]:
+        """Claims and calculations resting on a synthetic source, through derived_from and calculation inputs.
+
+        Synthetic is where the text came from, so withdrawn sources, claims and calculations count too:
+        a conversation replaced by a repeat leaves its hypotheses behind, and they stay marked.
+        """
+        synthetic = {source["id"] for source in self.all_sources if is_synthetic_source(source)}
+        based = {claim["id"] for claim in self.all_claims
+                 if any(item["source_id"] in synthetic for item in claim["supports"])}
+        based |= {calc["id"] for calc in self.all_calculations
+                  if any(item.get("source_id") in synthetic for item in calc["inputs"])}
+        grown = True
+        while grown:
+            grown = False
+            for claim in self.all_claims:
+                if claim["id"] not in based and based & set(claim["derived_from"]):
+                    based.add(claim["id"])
+                    grown = True
+            for calc in self.all_calculations:
+                if calc["id"] not in based and any(item.get("calculation_id") in based for item in calc["inputs"]):
+                    based.add(calc["id"])
+                    grown = True
+        return based
+
+    def check_interviews(self):
+        result = self.result
+        synthetic, guide = self.synthetic_sources(), self.lines_of(GUIDE)
+        if not synthetic and guide is None:
+            return
+        method = self.active_decision("interview_method")
+        if method is not None and method["status"] != "chosen":
+            method = None
+        if method is None:
+            result.problem("INTERVIEW_METHOD_MISSING", DECISION_REGISTRY, None,
+                           "synthetic sources or a guide without a chosen interview_method decision")
+        else:
+            chosen_at = self.first_method_choice(method)
+            for source in synthetic:
+                if datetime.fromisoformat(source["created_at"]) < chosen_at:
+                    result.problem("INTERVIEW_METHOD_MISSING", "evidence/sources.json", source["id"],
+                                   "the source is older than the first choice of the interview method")
+        self.check_session_limits(synthetic, method)
+        if guide is not None:
+            self.check_guide(guide, method)
+
+    def first_method_choice(self, method) -> datetime:
+        """When the person first chose an interview method: the earliest choice along the supersedes chain.
+
+        A re-chosen method replaces the earlier decision, but the conversations and the budget decision made
+        under it stay valid: what matters is that no conversation precedes the person's choice.
+        """
+        by_id = {d["id"]: d for d in self.all_decisions}
+        times, node, seen = [], method, set()
+        while node is not None and node["id"] not in seen:
+            seen.add(node["id"])
+            if node.get("choice"):
+                times.append(datetime.fromisoformat(node["choice"]["chosen_at"]))
+            node = by_id.get(node.get("supersedes"))
+        return min(times)
+
+    def check_session_limits(self, synthetic, method):
+        result = self.result
+        if len(synthetic) > MAX_SYNTHETIC_SESSIONS:
+            chosen_at = self.first_method_choice(method) if method else None
+            budget = any(d["topic"] == "budget" and d["status"] == "chosen" and chosen_at is not None
+                         and datetime.fromisoformat(d["choice"]["chosen_at"]) > chosen_at for d in self.decisions)
+            if not budget:
+                result.problem("INTERVIEW_LIMIT", "evidence/sources.json", None,
+                               f"{len(synthetic)} synthetic sources and no budget decision after the method")
+        for source in synthetic:
+            lines = read_output(self.root, source["location"].get("path", ""))
+            if lines is None:
+                continue
+            asked = sum(1 for name in split_sections(lines) if name.startswith(QUESTION_SECTION_PREFIX))
+            if asked > MAX_INTERVIEW_QUESTIONS:
+                result.problem("INTERVIEW_LIMIT", source["location"]["path"], source["id"],
+                               f"{asked} question sections, at most {MAX_INTERVIEW_QUESTIONS}")
+
+    def check_guide(self, guide, method):
+        result = self.result
+        found = status_line(guide)
+        number, text = found if found else (None, "")
+        status = GUIDE_STATUS_RE.fullmatch(text)
+        if not status:
+            result.problem("INTERVIEW_GUIDE", GUIDE, None, "no status line «Статус: способ выбран [DEC-…]»", number)
+        elif method is None or status.group(1) != method["id"]:
+            result.problem("INTERVIEW_GUIDE", GUIDE, status.group(1), "not the active interview_method decision", number)
+        self.check_structure(GUIDE, GUIDE_SECTIONS)
+        by_id = {question["id"]: question for question in self.questions}
+        if not any(GUIDE_QUESTION_RE.match(name) for name in split_sections(guide)):
+            result.problem("INTERVIEW_GUIDE", GUIDE, None, "no question section «Q-NNNN. title»")
+        for name in split_sections(guide):
+            if not GUIDE_QUESTION_RE.match(name):
+                continue
+            head = GUIDE_QUESTION_HEAD_RE.match(name)
+            question = by_id.get(head.group(1)) if head else None
+            if head is None:
+                result.problem("INTERVIEW_GUIDE", GUIDE, None, f"section «{name}» is not «Q-NNNN. title»")
+            elif question is None:
+                result.problem("INTERVIEW_GUIDE", GUIDE, head.group(1), "no such active question")
+            elif question["status"] not in ("partial", "blocked"):
+                result.problem("INTERVIEW_GUIDE", GUIDE, head.group(1),
+                               f"the question is {question['status']}, a guide covers partial or blocked ones")
+        check_numbers(result, GUIDE, list(enumerate(guide, 1)), self.index, user_said=self.user_said)
+
+    def check_synthetic_marks(self, file, lines):
+        based = self.synthetic_based()
+        if not based:
+            return
+        for number, line in enumerate(lines, 1):
+            for match in BRACKET_RE.finditer(line):
+                hit = [ref for ref in references(match.group(0)) if ref in based]
+                if hit and not SYNTHETIC_MARK_RE.match(line, match.end()):
+                    self.result.problem("SYNTHETIC_UNMARKED", file, hit[0],
+                                        f"no {SYNTHETIC_MARK} right after the reference", number)
+                    break
 
     def check_options(self):
         result = self.result
@@ -355,6 +493,7 @@ class Gate:
             if option["id"] not in table:
                 result.problem("OPTIONS_TABLE", OPTIONS, option["id"], "the option is not in the comparison table")
         check_numbers(result, OPTIONS, list(enumerate(lines, 1)), self.index, user_said=self.user_said)
+        self.check_synthetic_marks(OPTIONS, lines)
 
     def check_option_fields(self, option):
         empty = [name for name in OPTION_TEXT_FIELDS if not option[name].strip()]
@@ -504,6 +643,7 @@ class Gate:
             return
         self.check_status(file, lines)
         check_numbers(self.result, file, list(enumerate(lines, 1)), self.index, user_said=self.user_said)
+        self.check_synthetic_marks(file, lines)
         sections = split_sections(lines)
         for name in LINKED_SECTIONS.get(file, ()):
             body = sections.get(name, [])

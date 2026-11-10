@@ -22,3 +22,7 @@
 {"format_version": 1, "id": "ACT-0011", "phase": "end", "outcome": "completed", "result_refs": ["DEC-0005"], "cost": {"basis": "unknown"}, "at": "2026-11-05T12:00:00+03:00", "human": {"help": "choice", "reported_active_seconds": 45}}
 {"format_version": 1, "id": "ACT-0012", "phase": "start", "kind": "save", "tool": "checkpoint", "environment": "claude_code", "model": "example-model", "input_refs": [], "at": "2026-11-05T12:30:00+03:00"}
 {"format_version": 1, "id": "ACT-0012", "phase": "end", "outcome": "completed", "result_refs": ["CKP-0002"], "cost": {"basis": "unknown"}, "at": "2026-11-05T12:30:00+03:00"}
+{"format_version": 1, "id": "ACT-0013", "phase": "start", "kind": "human_input", "tool": "chat", "environment": "claude_code", "model": "example-model", "input_refs": [], "at": "2026-11-10T00:30:00+04:00"}
+{"format_version": 1, "id": "ACT-0013", "phase": "end", "outcome": "completed", "result_refs": ["DEC-0006"], "cost": {"basis": "unknown"}, "at": "2026-11-10T00:30:00+04:00", "human": {"help": "choice", "reported_active_seconds": 30}}
+{"format_version": 1, "id": "ACT-0014", "phase": "start", "kind": "model", "tool": "respondent", "environment": "claude_code", "model": "example-model", "input_refs": [], "at": "2026-11-10T00:30:00+04:00"}
+{"format_version": 1, "id": "ACT-0014", "phase": "end", "outcome": "completed", "result_refs": ["SRC-0005", "CLM-0009"], "cost": {"basis": "unknown"}, "at": "2026-11-10T00:30:00+04:00"}

@@ -11,6 +11,8 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
 import accounting as ac  # noqa: E402
+sys.path.insert(0, str(ROOT / "tests"))
+from demo_plain import copy_plain_demo  # noqa: E402
 import checkpoint as ck  # noqa: E402
 import validate_project as vp  # noqa: E402
 
@@ -469,7 +471,7 @@ class CaseCopy(unittest.TestCase):
         self.tmp = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
         self.case = self.tmp / "demo-case"
-        shutil.copytree(DEMO, self.case)
+        copy_plain_demo(DEMO, self.case)
         (self.case / REPORT).unlink()
 
     def codes(self):

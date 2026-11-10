@@ -54,8 +54,13 @@ def tree_hash(root):
     return digest.hexdigest()
 
 
+def is_baseline(finding):
+    """The example refers once to a synthetic hypothesis, so it carries one standing warning."""
+    return (finding.code, finding.file, finding.record_id) == ("BASIS_UNCONFIRMED", "outputs/commitments.md", "CLM-0009")
+
+
 def codes(report):
-    return sorted(f.code for f in report.errors), sorted(f.code for f in report.warnings)
+    return sorted(f.code for f in report.errors), sorted(f.code for f in report.warnings if not is_baseline(f))
 
 
 def spec_codes():
@@ -92,7 +97,8 @@ class ValidExample(CaseTestCase):
         report = self.run_case()
         expected = read_json(EXAMPLES / "valid" / "expected-warnings.json")["warnings"]
         self.assertEqual(report.errors, [])
-        self.assertEqual(sorted(f.code for f in report.warnings), sorted(expected))
+        found = sorted((f.code, f.file, f.record_id) for f in report.warnings)
+        self.assertEqual(found, sorted((w["code"], w["file"], w["id"]) for w in expected))
         self.assertIsNotNone(report.current_checkpoint)
 
     def test_valid_example_covers_every_type(self):
@@ -727,13 +733,13 @@ class Robustness(Mutating):
 class JournalAndCheckpoints(Mutating):
     def test_tear_cut_append_passes(self):
         path = self.case / JOURNAL
-        path.write_bytes(path.read_bytes() + b'{"format_version": 1, "id": "ACT-0013", "ph')
+        path.write_bytes(path.read_bytes() + b'{"format_version": 1, "id": "ACT-0015", "ph')
         self.assertEqual(codes(self.run_case()), ([], ["JOURNAL_TORN"]))
         data = path.read_bytes()
         path.write_bytes(data[: data.rindex(b"\n") + 1])
-        start = {"format_version": 1, "id": "ACT-0013", "phase": "start", "kind": "save", "tool": "checkpoint",
+        start = {"format_version": 1, "id": "ACT-0015", "phase": "start", "kind": "save", "tool": "checkpoint",
                  "environment": "codex", "model": None, "input_refs": [], "at": "2026-11-06T10:00:00+03:00"}
-        end = {"format_version": 1, "id": "ACT-0013", "phase": "end", "outcome": "completed", "result_refs": [],
+        end = {"format_version": 1, "id": "ACT-0015", "phase": "end", "outcome": "completed", "result_refs": [],
                "cost": {"basis": "unknown"}, "at": "2026-11-06T10:00:01+03:00"}
         with path.open("ab") as handle:
             for line in (start, end):
@@ -782,7 +788,7 @@ class JournalAndCheckpoints(Mutating):
                 report = self.run_case()
                 self.assertEqual(codes(report), ([], ["CHECKPOINT_FALLBACK"]))
                 self.assertEqual(report.current_checkpoint, "CKP-0002")
-                self.assertIn("CKP-0003", report.warnings[0].message)
+                self.assertIn("CKP-0003", next(w for w in report.warnings if w.code == "CHECKPOINT_FALLBACK").message)
 
     def test_stray_file_in_checkpoint_folder_is_reported(self):
         for name in ("CKP-3.json", "ckp-0003.json", "CKP-0003.json.tmp", "notes.txt"):
@@ -1025,7 +1031,7 @@ class EvidenceChecks(Mutating):
     def add_source(self, kind, blocks=None, status="ok"):
         """Register an extra source with a file and an extraction; return its ID."""
         self.extra += 1
-        source_id = f"SRC-{4 + self.extra:04d}"
+        source_id = f"SRC-{5 + self.extra:04d}"
         name = f"sources/extra-{self.extra}.{kind}"
         data = f"stub {source_id}".encode()
         (self.case / name).write_bytes(data)
@@ -1149,6 +1155,88 @@ class EvidenceChecks(Mutating):
         shown = self.cli(self.case, "--json").stdout.decode("utf-8")
         self.assertNotIn(marker, shown)
         self.assertNotIn(marker, "".join(f.message for f in report.errors))
+
+
+class SyntheticSources(Mutating):
+    SYNTH = "sources/interviews/synthetic-r1-1.md"
+
+    def add_synthetic(self, path=None, origin="synthetic", location=None):
+        path = path or self.SYNTH
+        data = "# Беседа\n## Вопрос 1\nОтвет персонажа.\n".encode("utf-8")
+        (self.case / path).parent.mkdir(parents=True, exist_ok=True)
+        (self.case / path).write_bytes(data)
+        record = {
+            "id": "SRC-0050", "created_at": "2026-11-02T10:00:00+03:00", "record_status": "active",
+            "type": "md", "title": "Беседа с персонажем", "location": location or {"path": path},
+            "origin": origin, "allowed": True, "retrieved_at": "2026-11-02T10:00:00+03:00",
+            "sha256": hashlib.sha256(data).hexdigest(),
+            "extraction": {"status": "ok", "complete": True, "limits": "Прочитан целиком."},
+        }
+        self.edit(SOURCES, lambda d: d["records"].append(record))
+        block = {"n": 1, "locator": {"kind": "paragraph", "index": 1}, "text": "## Вопрос 1", "heading": "Вопрос 1"}
+        (self.case / "sources" / "extracted" / "SRC-0050.jsonl").write_text(
+            json.dumps(block, ensure_ascii=False) + "\n", encoding="utf-8")
+
+    def synthetic_claim(self, kind="hypothesis", status="unconfirmed"):
+        claim = {
+            "id": "CLM-0100", "created_at": "2026-11-02T10:00:00+03:00", "text": "Клиенты могли бы платить.",
+            "kind": kind, "status": status,
+            "supports": [{"source_id": "SRC-0050", "locator": {"kind": "section", "heading": "Вопрос 1"}, "note": "Реплика"}],
+            "contradicts": [], "derived_from": [], "limits": "Синтетическая беседа.",
+        }
+        self.edit(CLAIMS, lambda d: d["records"].append(claim))
+
+    def errors(self):
+        return sorted(f.code for f in self.run_case().errors)
+
+    def test_synthetic_claim_must_be_hypothesis(self):
+        self.add_synthetic()
+        self.synthetic_claim(kind="fact", status="unconfirmed")
+        self.assertEqual(self.errors(), ["SYNTHETIC_NOT_EVIDENCE"])
+
+    def test_synthetic_claim_cannot_be_confirmed(self):
+        self.add_synthetic()
+        self.synthetic_claim(kind="hypothesis", status="confirmed")
+        self.assertEqual(self.errors(), ["FACT_NOT_CONFIRMABLE", "SYNTHETIC_NOT_EVIDENCE"])
+
+    def test_synthetic_hypothesis_ok(self):
+        self.add_synthetic()
+        self.synthetic_claim()
+        self.assertEqual(self.errors(), [])
+
+    def test_synthetic_calc_input_refused(self):
+        self.add_synthetic()
+        item = {"name": "реплика", "source_id": "SRC-0050", "locator": {"kind": "section", "heading": "Вопрос 1"},
+                "value": 1, "unit": "шт", "period": "2025"}
+        self.rec(CALCS, "CALC-0002", lambda r: r["inputs"].append(item))
+        self.assertIn("SYNTHETIC_NOT_EVIDENCE", self.errors())
+
+    def test_synthetic_origin_outside_path(self):
+        self.add_synthetic(path="sources/extra-interview.md")
+        self.assertEqual(self.errors(), ["SYNTHETIC_PATH"])
+
+    def test_synthetic_path_with_other_origin(self):
+        self.add_synthetic(origin="user_provided")
+        self.assertEqual(self.errors(), ["SYNTHETIC_PATH"])
+
+    def test_synthetic_url_source_refused(self):
+        self.add_synthetic(location={"url": "https://example.invalid/talk"})
+        self.assertIn("SYNTHETIC_PATH", self.errors())
+
+    def test_inference_on_synthetic_hypothesis_not_confirmed(self):
+        self.add_synthetic()
+        self.synthetic_claim()
+        self.rec(CLAIMS, "CLM-0006", lambda r: r["derived_from"].append("CLM-0100"))
+        self.assertEqual(self.errors(), ["CLAIM_WEAK_DERIVATION"])
+
+    def test_is_synthetic_source(self):
+        self.assertTrue(vp.is_synthetic_source({"origin": "synthetic"}))
+        self.assertFalse(vp.is_synthetic_source({"origin": "user_provided"}))
+
+    def test_interview_method_decision_without_option(self):
+        decision = next(r for r in read_json(self.case / DECISIONS)["records"] if r["id"] == "DEC-0006")
+        self.assertEqual((decision["topic"], decision["choice"]["option_id"]), ("interview_method", None))
+        self.assertEqual(self.errors(), [])
 
 
 if __name__ == "__main__":

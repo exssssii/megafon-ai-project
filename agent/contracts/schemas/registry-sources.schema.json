@@ -95,7 +95,8 @@
           "enum": [
             "user_provided",
             "public_web",
-            "own_training"
+            "own_training",
+            "synthetic"
           ]
         },
         "allowed": {

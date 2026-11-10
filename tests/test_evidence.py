@@ -517,14 +517,15 @@ class Withdrawal(unittest.TestCase):
         self.assertEqual(dependents["Q"], ["Q-0002"])
         self.assertIn("DEC-0002", dependents["DEC"])
         self.assertEqual(dependents["outputs"], [
-            "outputs/commitments.md", "outputs/communication-strategy.md", "outputs/options.md",
+            "outputs/commitments.md", "outputs/communication-strategy.md", "outputs/interview-guide.md",
+            "outputs/options.md",
             "outputs/product-strategy.md", "outputs/validation-plan.md"])
         self.assertIn(("WITHDRAWN_USED", "CALC-0002"), self.validate())
         self.assertTrue(any(item["code"] == "WITHDRAWN_USED" for item in report["case_errors"]))
         calc = json.loads((self.case / "evidence/calculations.json").read_text(encoding="utf-8"))
         self.assertEqual(calc["records"][1]["record_status"], "active")
         self.assertEqual([r["id"] for r in json.loads((self.case / SOURCES).read_text(encoding="utf-8"))["records"]],
-                         ["SRC-0001", "SRC-0002", "SRC-0003", "SRC-0004"])
+                         ["SRC-0001", "SRC-0002", "SRC-0003", "SRC-0004", "SRC-0005"])
 
     def test_repeat_does_not_duplicate_the_note_and_nothing_is_rewritten(self):
         self.run_tool("withdraw", self.case, "SRC-0001", "--reason", "Заменён")
@@ -567,7 +568,7 @@ class Withdrawal(unittest.TestCase):
         self.run_tool("withdraw", self.case, "SRC-0001", "--reason", "Заменён")
         code, report, _ = Base.call(read_material.main, ["add", self.case, self.case / "sources" / "service-notes.md",
                                                          "--title", "Заметки", "--origin", "user_provided", "--allowed", "yes"])
-        self.assertEqual((code, report["id"]), (OK, "SRC-0005"), report)
+        self.assertEqual((code, report["id"]), (OK, "SRC-0006"), report)
 
     def test_withdrawing_a_record_nobody_uses_changes_only_that_record(self):
         code, report, _ = self.run_tool("withdraw", self.case, "CLM-0005", "--reason", "Повтор")
@@ -743,16 +744,16 @@ class Navigation(unittest.TestCase):
     def test_sources_with_one_address_are_marked(self):
         def duplicate(data):
             clone = json.loads(json.dumps(data["records"][2]))
-            clone["id"] = "SRC-0005"
+            clone["id"] = "SRC-0006"
             data["records"].append(clone)
 
         self.rewrite(SOURCES, duplicate)
-        shutil.copyfile(self.case / "sources/extracted/SRC-0003.jsonl", self.case / "sources/extracted/SRC-0005.jsonl")
+        shutil.copyfile(self.case / "sources/extracted/SRC-0003.jsonl", self.case / "sources/extracted/SRC-0006.jsonl")
         self.rewrite(CLAIMS, lambda d: d["records"][6]["supports"].append(
-            dict(d["records"][6]["supports"][0], source_id="SRC-0005")))
+            dict(d["records"][6]["supports"][0], source_id="SRC-0006")))
         report, items, _ = self.pages("trace", self.case, "CLM-0007")
         marked = [item for item in items if item["type"] == "support"]
-        self.assertEqual([item["same_address_as"] for item in marked], [["SRC-0005"], ["SRC-0003"]])
+        self.assertEqual([item["same_address_as"] for item in marked], [["SRC-0006"], ["SRC-0003"]])
         self.assertIn("same_address", report["warnings"])
 
     def test_page_saved_by_the_agent_is_marked(self):
@@ -854,7 +855,8 @@ class Navigation(unittest.TestCase):
         self.assertEqual(report["dependents"]["CLM"], ["CLM-0006"])
         self.assertEqual(report["dependents"]["OPT"], ["OPT-0001", "OPT-0003"])
         self.assertEqual(report["dependents"]["outputs"], [
-            "outputs/commitments.md", "outputs/communication-strategy.md", "outputs/options.md",
+            "outputs/commitments.md", "outputs/communication-strategy.md", "outputs/interview-guide.md",
+            "outputs/options.md",
             "outputs/product-strategy.md", "outputs/validation-plan.md"])
         self.assertEqual(report["inactive"], ["DEC-0001"])
         self.assertEqual(self.run_tool("impact", self.case, "SRC-0004")[1]["dependents"],
@@ -924,14 +926,14 @@ class Review(Base):
                     calc_record("CALC-0003", [{"name": "n", "calculation_id": "CALC-0001", "value": 1, "unit": None,
                                                "period": None}])))
                 self.rewrite(CLAIMS, lambda d: d["records"].append({
-                    "id": "CLM-0009", "created_at": "2026-11-02T10:00:00+03:00", "text": "Вывод из цепочки.",
+                    "id": "CLM-0010", "created_at": "2026-11-02T10:00:00+03:00", "text": "Вывод из цепочки.",
                     "kind": "inference", "status": "confirmed", "supports": [], "contradicts": [],
                     "derived_from": ["CALC-0003"], "limits": None}))
                 prepare()
                 code, report, _ = self.run_tool("withdraw", self.case, "SRC-0002", "--reason", "Заменён")
                 self.assertEqual(code, OK, report)
-                self.assertEqual(report["downgraded"], ["CLM-0003", "CLM-0006", "CLM-0009"])
-                for claim_id in ("CLM-0003", "CLM-0006", "CLM-0009"):
+                self.assertEqual(report["downgraded"], ["CLM-0003", "CLM-0006", "CLM-0010"])
+                for claim_id in ("CLM-0003", "CLM-0006", "CLM-0010"):
                     self.assertEqual(self.claim(claim_id)["status"], "unconfirmed")
                     self.assertIn("SRC-0002", self.claim(claim_id)["limits"])
                 calcs = json.loads((self.case / "evidence/calculations.json").read_text(encoding="utf-8"))["records"]

@@ -76,6 +76,19 @@
         "chosen_at": "2026-11-05T12:00:00+03:00",
         "action_id": "ACT-0011"
       }
+    },
+    {
+      "id": "DEC-0006",
+      "created_at": "2026-11-10T00:30:00+04:00",
+      "topic": "interview_method",
+      "status": "chosen",
+      "proposal": null,
+      "choice": {
+        "option_id": null,
+        "user_statement": "Обе: сначала модельные собеседники, потом живые интервью по исправленному гайду",
+        "chosen_at": "2026-11-10T00:30:00+04:00",
+        "action_id": "ACT-0013"
+      }
     }
   ]
 }

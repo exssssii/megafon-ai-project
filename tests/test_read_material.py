@@ -638,6 +638,59 @@ class Registry(Base):
         self.assertEqual(code, REFUSED)
 
 
+class Synthetic(Base):
+    CONVERSATION = ("# Беседа\n\nПерсонаж: Р1\n\n## Вопрос 1\nКак вы обмениваетесь книгами?\nОтвет: через друзей.\n\n## Вопрос 2\nЧто мешает?\nОтвет: нет времени.\n")
+
+    def place(self, rel="sources/interviews/synthetic-r1-1.md"):
+        path = self.case / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(self.CONVERSATION, encoding="utf-8")
+        return path
+
+    def add_with(self, path, *origin):
+        return self.run_tool("add", self.case, path, "--title", "Беседа", *origin, "--allowed", "yes")
+
+    def assert_not_registered(self):
+        self.assertEqual(self.sources(), [])
+        self.assertFalse((self.case / "sources" / "extracted").exists())
+
+    def test_add_synthetic_path_forces_origin(self):
+        path = self.place()
+        code, report, _ = self.add_with(path, "--origin", "user_provided")
+        self.assertEqual(code, REFUSED, report)
+        self.assert_not_registered()
+
+    def test_add_synthetic_without_origin(self):
+        path = self.place()
+        code, report, _ = self.add_with(path)
+        self.assertEqual(code, OK, report)
+        record = self.sources()[0]
+        self.assertEqual((record["origin"], record["allowed"], record["location"]["path"]),
+                         ("synthetic", True, "sources/interviews/synthetic-r1-1.md"))
+        headings = [b["heading"] for b in self.blocks("SRC-0001")]
+        self.assertIn("Вопрос 1", headings)
+        self.assertIn("Вопрос 2", headings)
+        self.assert_valid()
+        self.assertEqual(self.add_with(path)[1]["existing"], True)
+
+    def test_add_synthetic_with_matching_origin(self):
+        code, report, _ = self.add_with(self.place(), "--origin", "synthetic")
+        self.assertEqual((code, self.sources()[0]["origin"]), (OK, "synthetic"))
+
+    def test_add_synthetic_origin_elsewhere_refused(self):
+        code, report, _ = self.add_with(self.write("a.md", self.CONVERSATION), "--origin", "synthetic")
+        self.assertEqual(code, REFUSED, report)
+        self.assert_nothing_written()
+        code, report, _ = self.add_with(self.place("sources/other/synthetic-r1-1.md"), "--origin", "synthetic")
+        self.assertEqual(code, REFUSED, report)
+        self.assert_not_registered()
+
+    def test_add_other_path_requires_origin(self):
+        code, report, _ = self.add_with(self.write("a.md", self.CONVERSATION))
+        self.assertEqual(code, REFUSED, report)
+        self.assert_nothing_written()
+
+
 class Fetched(Base):
     URL = "https://example.com/p"
 

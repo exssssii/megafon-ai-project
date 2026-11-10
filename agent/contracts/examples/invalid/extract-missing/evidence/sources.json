@@ -79,7 +79,7 @@
       }
     },
     {
-      "id": "SRC-0005",
+      "id": "SRC-0006",
       "created_at": "2026-11-03T10:00:00+03:00",
       "record_status": "active",
       "type": "web",
@@ -95,6 +95,25 @@
         "status": "ok",
         "complete": true,
         "limits": "Прочитана одна страница."
+      }
+    },
+    {
+      "id": "SRC-0005",
+      "created_at": "2026-11-10T00:30:00+04:00",
+      "record_status": "active",
+      "type": "md",
+      "title": "Беседа с персонажем: скептик",
+      "location": {
+        "path": "sources/interviews/synthetic-skeptic-1.md"
+      },
+      "origin": "synthetic",
+      "allowed": true,
+      "retrieved_at": "2026-11-10T00:30:00+04:00",
+      "sha256": "43569262d59e0e24c5ec1ae0663b1011987089c49bfc6724b7492cdb744def15",
+      "extraction": {
+        "status": "ok",
+        "complete": true,
+        "limits": "Прочитан в границах формата. Абзацев: 11."
       }
     }
   ]

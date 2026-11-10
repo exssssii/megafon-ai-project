@@ -13,6 +13,8 @@ sys.path.insert(0, str(ROOT / "tools"))
 
 import gate  # noqa: E402
 import revision  # noqa: E402
+sys.path.insert(0, str(ROOT / "tests"))
+from demo_plain import strip_interviews  # noqa: E402
 
 DEMO = ROOT / "agent" / "contracts" / "examples" / "valid" / "demo-case"
 PROBLEMS, REFUSED = 1, 4
@@ -208,6 +210,11 @@ class Base(unittest.TestCase):
         self.write("outputs/accounting.md", "# Учёт работы\n")
         self.change("Q", self.partial_question)
         self.drop_demo_revision()
+        self.drop_demo_interviews()
+
+    def drop_demo_interviews(self):
+        """The example holds one synthetic conversation; the interview tests below add their own."""
+        strip_interviews(self.case)
 
     def drop_demo_revision(self):
         """The example holds one recorded revision; the tests below add their own."""
@@ -229,7 +236,8 @@ class Base(unittest.TestCase):
     def change(self, kind, edit):
         name = {"Q": "research/questions.json", "OPT": "decisions/options.json",
                 "DEC": "decisions/decisions.json", "CLM": "evidence/claims.json",
-                "CALC": "evidence/calculations.json"}[kind]
+                "CALC": "evidence/calculations.json",
+                "SRC": "evidence/sources.json"}[kind]
         document = json.loads((self.case / name).read_text(encoding="utf-8"))
         edit(document["records"])
         self.write(name, json.dumps(document, ensure_ascii=False, indent=2))
@@ -309,7 +317,7 @@ class ContractExample(unittest.TestCase):
 
     def test_contract_example_passes_done(self):
         code, report = self.run_tool(gate, "check", str(self.case), "done")
-        self.assertEqual((code, report["problems"], report["warnings"]), (0, [], []))
+        self.assertEqual((code, report["problems"], [w["code"] for w in report["warnings"]]), (0, [], ["BASIS_UNCONFIRMED"]))
 
     def test_contract_example_has_a_recorded_revision(self):
         code, report = self.run_tool(revision, "affected", str(self.case), "CLM-0001")
@@ -1009,6 +1017,325 @@ class Instructions(unittest.TestCase):
                 self.assertIn(f"`{name}`", text)
         for name in gate.KIND_SECTIONS.values():
             self.assertIn(f"`{name}`", text)
+
+
+
+METHOD_AT = "2026-11-08T10:00:00+03:00"
+LATER_AT = "2026-11-08T12:00:00+03:00"
+GUIDE_MD = """# Гайд интервью
+
+Статус: способ выбран [DEC-0006]
+
+## Кого спрашивать
+
+Жители района [CLM-0002].
+
+## Q-0002. Окупаемость
+
+Что нужно узнать: будут ли платить [Q-0002].
+
+## Согласие и данные
+
+Перед интервью получить согласие, имён не хранить.
+"""
+
+
+class Interviews(Base):
+    """Interview method, guide, session limits and marks of synthetic support."""
+
+    def add_synthetic(self, number=1, created_at=LATER_AT, questions=2, status="active"):
+        src_id = f"SRC-{4 + number:04d}"
+        path = f"sources/interviews/synthetic-r{number}-1.md"
+        text = "# Беседа\n" + "".join(f"\n## Вопрос {n}\n\nОтвет персонажа.\n" for n in range(1, questions + 1))
+        data = text.encode("utf-8")
+        (self.case / path).parent.mkdir(parents=True, exist_ok=True)
+        (self.case / path).write_bytes(data)
+        record = {
+            "id": src_id, "created_at": created_at, "record_status": status, "type": "md",
+            "title": "Беседа с персонажем", "location": {"path": path}, "origin": "synthetic", "allowed": True,
+            "retrieved_at": created_at, "sha256": hashlib.sha256(data).hexdigest(),
+            "extraction": {"status": "ok", "complete": True, "limits": "Прочитан целиком."},
+        }
+        if status == "withdrawn":
+            record["status_reason"] = "Заменена повтором."
+        self.change("SRC", lambda records: records.append(record))
+        block = {"n": 1, "locator": {"kind": "paragraph", "index": 1}, "text": "## Вопрос 1", "heading": "Вопрос 1"}
+        (self.case / "sources" / "extracted" / f"{src_id}.jsonl").write_text(
+            json.dumps(block, ensure_ascii=False) + "\n", encoding="utf-8")
+        return src_id
+
+    def assert_invalid_with(self, code, stage):
+        """The gate stops on validator errors and names their codes in one CASE_INVALID note."""
+        _, report = self.check(stage)
+        notes = " ".join(item["note"] for item in report["problems"] if item["code"] == "CASE_INVALID")
+        self.assertIn(code, notes)
+
+    def add_method(self, at=METHOD_AT):
+        self.add_approval("interview_method", "DEC-0006", "ACT-0100", at=at)
+
+    def add_budget(self, at="2026-11-08T13:00:00+03:00"):
+        self.add_approval("budget", "DEC-0007", "ACT-0101", at=at)
+
+    def add_hypothesis(self, src_id="SRC-0005", claim_id="CLM-0100", derived_from=()):
+        claim = {
+            "id": claim_id, "created_at": LATER_AT, "text": "Клиенты сочли бы это дорогим.",
+            "kind": "inference" if derived_from else "hypothesis", "status": "unconfirmed",
+            "supports": [] if derived_from else [
+                {"source_id": src_id, "locator": {"kind": "section", "heading": "Вопрос 1"}, "note": "Реплика"}],
+            "contradicts": [], "derived_from": list(derived_from), "limits": "Синтетическая беседа.",
+        }
+        self.change("CLM", lambda records: records.append(claim))
+
+    def with_synthetic_claim(self):
+        self.add_method()
+        self.add_synthetic()
+        self.add_hypothesis()
+
+    def product_with(self, line):
+        self.replace("outputs/product-strategy.md", "Покупка книг.", f"Покупка книг. {line}")
+
+    def write_guide(self, text=GUIDE_MD):
+        self.write("outputs/interview-guide.md", text)
+
+    def test_no_interviews_no_new_problems(self):
+        for stage in gate.STAGES:
+            with self.subTest(stage):
+                self.assertEqual(self.codes(stage), set())
+
+    def test_synthetic_source_without_method(self):
+        self.add_synthetic()
+        self.assert_code("INTERVIEW_METHOD_MISSING", "research")
+
+    def test_guide_without_method(self):
+        self.write_guide(GUIDE_MD.replace("[DEC-0006]", "[DEC-0002]"))
+        self.assert_code("INTERVIEW_METHOD_MISSING", "research")
+
+    def test_synthetic_source_before_method(self):
+        self.add_method()
+        self.add_synthetic(created_at="2026-11-08T09:00:00+03:00")
+        self.assert_code("INTERVIEW_METHOD_MISSING", "research")
+
+    def test_synthetic_source_after_method_ok(self):
+        self.add_method()
+        self.add_synthetic()
+        self.assertEqual(self.codes("research"), set())
+
+    def test_guide_status_not_method(self):
+        self.add_method()
+        self.write_guide(GUIDE_MD.replace("[DEC-0006]", "[DEC-0002]"))
+        self.assert_code("INTERVIEW_GUIDE", "research")
+
+    def test_guide_status_missing(self):
+        self.add_method()
+        self.write_guide(GUIDE_MD.replace("Статус: способ выбран [DEC-0006]", "Черновик."))
+        self.assert_code("INTERVIEW_GUIDE", "research")
+
+    def test_guide_unknown_question(self):
+        self.add_method()
+        self.write_guide(GUIDE_MD.replace("Q-0002. Окупаемость", "Q-0099. Что-то"))
+        self.assert_code("INTERVIEW_GUIDE", "research")
+
+    def test_guide_question_answered(self):
+        self.add_method()
+        self.write_guide(GUIDE_MD.replace("Q-0002. Окупаемость", "Q-0001. Правила"))
+        self.assert_code("INTERVIEW_GUIDE", "research")
+
+    def test_guide_missing_section(self):
+        self.add_method()
+        self.write_guide(GUIDE_MD.replace("Согласие и данные", "Прочее"))
+        self.assert_code("OUTPUT_SECTION", "research")
+
+    def test_guide_number_needs_link(self):
+        self.add_method()
+        self.write_guide(GUIDE_MD.replace("будут ли платить", "будут ли платить 500 рублей"))
+        self.assert_code("NUMBER_UNLINKED", "research")
+
+    def test_guide_ok(self):
+        self.add_method()
+        self.write_guide()
+        self.assertEqual(self.codes("research"), set())
+
+    def test_fourth_session_needs_budget(self):
+        self.add_method()
+        for number in range(1, 5):
+            self.add_synthetic(number)
+        self.assert_code("INTERVIEW_LIMIT", "research")
+
+    def test_fourth_session_with_budget_ok(self):
+        self.add_method()
+        for number in range(1, 5):
+            self.add_synthetic(number)
+        self.add_budget()
+        self.assertEqual(self.codes("research"), set())
+
+    def test_budget_before_method_does_not_count(self):
+        self.add_approval("budget", "DEC-0007", "ACT-0101", at="2026-11-08T09:00:00+03:00")
+        self.add_method()
+        for number in range(1, 5):
+            self.add_synthetic(number)
+        self.assert_code("INTERVIEW_LIMIT", "research")
+
+    def test_withdrawn_session_not_counted(self):
+        self.add_method()
+        for number in range(1, 4):
+            self.add_synthetic(number)
+        self.add_synthetic(4, status="withdrawn")
+        self.assertEqual(self.codes("research"), set())
+
+    def test_eleven_questions(self):
+        self.add_method()
+        self.add_synthetic(questions=11)
+        self.assert_code("INTERVIEW_LIMIT", "research")
+
+    def test_ten_questions_ok(self):
+        self.add_method()
+        self.add_synthetic(questions=10)
+        self.assertEqual(self.codes("research"), set())
+
+    def test_unmarked_synthetic_reference(self):
+        self.with_synthetic_claim()
+        self.product_with("Возражение: дорого [CLM-0100].")
+        self.assert_code("SYNTHETIC_UNMARKED", "strategies")
+
+    def test_marked_reference_ok(self):
+        self.with_synthetic_claim()
+        self.product_with("Возражение: дорого [CLM-0100] (синтетика).")
+        self.assertEqual(self.codes("strategies"), set())
+
+    def test_mark_required_in_table_cell(self):
+        self.with_synthetic_claim()
+        self.replace("outputs/communication-strategy.md", "| Бесплатный обмен | Обмен в пунктах | [CLM-0001] |",
+                     "| Бесплатный обмен | Обмен в пунктах | [CLM-0001], [CLM-0100] |")
+        self.assert_code("SYNTHETIC_UNMARKED", "strategies")
+
+    def test_mark_in_table_cell_ok(self):
+        self.with_synthetic_claim()
+        self.replace("outputs/communication-strategy.md", "| Бесплатный обмен | Обмен в пунктах | [CLM-0001] |",
+                     "| Бесплатный обмен | Обмен в пунктах | [CLM-0001] [CLM-0100] (синтетика) |")
+        self.assertNotIn("SYNTHETIC_UNMARKED", self.codes("strategies"))
+
+    def test_transitive_inference_needs_mark(self):
+        self.with_synthetic_claim()
+        self.add_hypothesis(claim_id="CLM-0101", derived_from=["CLM-0100"])
+        self.product_with("Вывод: дорого [CLM-0101].")
+        self.assert_code("SYNTHETIC_UNMARKED", "strategies")
+        self.replace("outputs/product-strategy.md", "[CLM-0101].", "[CLM-0101] (синтетика).")
+        self.assertEqual(self.codes("strategies"), set())
+
+    def test_mark_required_in_commitments(self):
+        self.with_synthetic_claim()
+        self.replace("outputs/commitments.md", "Бесплатный обмен сохраняется [CLM-0001].",
+                     "Бесплатный обмен сохраняется [CLM-0001]. Риск: дорого [CLM-0100].")
+        self.assert_code("SYNTHETIC_UNMARKED", "done")
+
+    def test_option_reference_needs_no_mark(self):
+        self.with_synthetic_claim()
+        self.product_with("Вариант [OPT-0001].")
+        self.assertEqual(self.codes("strategies"), set())
+
+    def test_non_synthetic_reference_needs_no_mark(self):
+        self.with_synthetic_claim()
+        self.product_with("Обмен бесплатный [CLM-0001].")
+        self.assertEqual(self.codes("strategies"), set())
+
+    def withdraw_synthetic(self, src_id="SRC-0005"):
+        def mark(records):
+            for record in records:
+                if record["id"] == src_id:
+                    record["record_status"] = "withdrawn"
+                    record["status_reason"] = "Заменена повтором."
+        self.change("SRC", mark)
+
+    def test_withdrawn_synthetic_still_needs_mark(self):
+        self.with_synthetic_claim()
+        self.withdraw_synthetic()
+        self.product_with("Возражение: дорого [CLM-0100].")
+        self.assert_code("SYNTHETIC_UNMARKED", "strategies")
+        self.replace("outputs/product-strategy.md", "[CLM-0100].", "[CLM-0100] (синтетика).")
+        self.assertNotIn("SYNTHETIC_UNMARKED", self.codes("strategies"))
+
+    def test_withdrawn_synthetic_marks_transitive(self):
+        self.with_synthetic_claim()
+        self.add_hypothesis(claim_id="CLM-0101", derived_from=["CLM-0100"])
+        self.withdraw_synthetic()
+        self.product_with("Вывод: дорого [CLM-0101].")
+        self.assert_code("SYNTHETIC_UNMARKED", "strategies")
+
+    def test_withdrawn_synthetic_fact_rejected(self):
+        self.with_synthetic_claim()
+        self.withdraw_synthetic()
+
+        def make_fact(records):
+            for record in records:
+                if record["id"] == "CLM-0100":
+                    record["kind"] = "fact"
+        self.change("CLM", make_fact)
+        self.assert_invalid_with("SYNTHETIC_NOT_EVIDENCE", "research")
+
+    def test_withdrawn_synthetic_calculation_input_rejected(self):
+        self.with_synthetic_claim()
+        self.withdraw_synthetic()
+
+        def use_input(records):
+            item = records[0]["inputs"][0]
+            item["source_id"], item["locator"] = "SRC-0005", {"kind": "section", "heading": "Вопрос 1"}
+            item.pop("column", None)
+            item.pop("aggregate", None)
+        self.change("CALC", use_input)
+        self.assert_invalid_with("SYNTHETIC_NOT_EVIDENCE", "research")
+
+    def test_synthetic_source_cannot_contradict(self):
+        self.with_synthetic_claim()
+
+        def contradict(records):
+            for record in records:
+                if record["id"] == "CLM-0001":
+                    record["contradicts"].append({"source_id": "SRC-0005",
+                                                  "locator": {"kind": "section", "heading": "Вопрос 1"},
+                                                  "note": "Персонаж не согласен", "resolution": "Модельная реплика."})
+        self.change("CLM", contradict)
+        self.assert_invalid_with("SYNTHETIC_NOT_EVIDENCE", "research")
+
+    def test_rechosen_method_keeps_earlier_sessions(self):
+        self.add_method()
+        self.add_synthetic()
+        self.add_approval("interview_method", "DEC-0008", "ACT-0102", at="2026-11-08T14:00:00+03:00",
+                          supersedes="DEC-0006")
+        self.assertEqual(self.codes("research"), set())
+
+    def test_rechosen_method_keeps_earlier_budget(self):
+        self.add_method()
+        self.add_budget(at="2026-11-08T11:00:00+03:00")
+        for number in range(1, 5):
+            self.add_synthetic(number)
+        self.add_approval("interview_method", "DEC-0008", "ACT-0102", at="2026-11-08T14:00:00+03:00",
+                          supersedes="DEC-0006")
+        self.assertEqual(self.codes("research"), set())
+
+    def test_session_before_first_method_still_rejected_after_rechoice(self):
+        self.add_method()
+        self.add_synthetic(created_at="2026-11-08T09:00:00+03:00")
+        self.add_approval("interview_method", "DEC-0008", "ACT-0102", at="2026-11-08T14:00:00+03:00",
+                          supersedes="DEC-0006")
+        self.assert_code("INTERVIEW_METHOD_MISSING", "research")
+
+    def test_guide_without_question_sections(self):
+        self.add_method()
+        self.write_guide(GUIDE_MD.replace("Q-0002. Окупаемость", "Окупаемость"))
+        self.assert_code("INTERVIEW_GUIDE", "research")
+
+    def test_options_reference_needs_mark(self):
+        self.with_synthetic_claim()
+        self.replace("outputs/options.md", "Развивать [OPT-0003].", "Развивать [OPT-0003]. Риск [CLM-0100].")
+        self.assert_code("SYNTHETIC_UNMARKED", "options")
+
+    def test_synthetic_based_set(self):
+        self.with_synthetic_claim()
+        self.add_hypothesis(claim_id="CLM-0101", derived_from=["CLM-0100"])
+        validator = gate.Validator(self.case)
+        validator.run()
+        found = gate.Gate(self.case, validator, "done", False, gate.Result()).synthetic_based()
+        self.assertEqual(found, {"CLM-0100", "CLM-0101"})
 
 
 if __name__ == "__main__":
