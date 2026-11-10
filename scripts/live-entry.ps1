@@ -166,7 +166,8 @@ doc["records"] = [record]
 path.write_text(json.dumps(doc, ensure_ascii=False, indent=2), encoding="utf-8")
 journal = case / "state/actions.jsonl"
 lines = [json.loads(x) for x in journal.read_text(encoding="utf-8").splitlines()]
-drop = {x["id"] for x in lines if x.get("kind") == "human_input"} | {"ACT-0009"}
+# Checkpoints are removed above, so the saves that point at them go as well.
+drop = {x["id"] for x in lines if x.get("kind") in ("human_input", "save")} | {"ACT-0009"}
 kept = []
 for line in lines:
     if line["id"] in drop:
