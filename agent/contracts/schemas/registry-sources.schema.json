@@ -57,7 +57,8 @@
             "pdf",
             "csv",
             "xlsx",
-            "web"
+            "web",
+            "image"
           ]
         },
         "title": {

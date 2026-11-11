@@ -1100,6 +1100,52 @@ class EvidenceChecks(Mutating):
                 self.add_claim(source, {"kind": "rows", "from": 2, "to": 2, "quote": "140"})
                 self.assertEqual(codes(self.run_case()), (errors, []))
 
+    REGION_BLOCK = {"locator": {"kind": "region", "index": 1, "area": "верх, по центру, шапка"},
+                    "text": "Где: верх, по центру, шапка\nВидно: кнопка\nТекст: «Подключить»"}
+
+    def test_region_locator_only_for_image(self):
+        source = self.add_source("md", [{"locator": {"kind": "paragraph", "index": 1}, "text": "Текст.", "heading": "Р"}])
+        self.add_claim(source, {"kind": "region", "index": 1, "area": "верх"})
+        self.assertEqual(codes(self.run_case()), (["LOCATOR_MISMATCH"], []))
+
+    def test_region_locator_finds_an_observation_of_an_image(self):
+        source = self.add_source("image", [self.REGION_BLOCK])
+        self.add_claim(source, {"kind": "region", "index": 1, "area": "верх, по центру, шапка", "quote": "Подключить"})
+        self.assertEqual(codes(self.run_case()), ([], []))
+
+    def test_region_index_missing(self):
+        source = self.add_source("image", [self.REGION_BLOCK])
+        self.add_claim(source, {"kind": "region", "index": 2, "area": "низ"})
+        self.assertEqual(codes(self.run_case()), (["LOCATOR_NOT_FOUND"], []))
+
+    def test_region_quote_not_in_observation(self):
+        source = self.add_source("image", [self.REGION_BLOCK])
+        self.add_claim(source, {"kind": "region", "index": 1, "area": "верх, по центру, шапка", "quote": "Купить"})
+        self.assertEqual(codes(self.run_case()), (["QUOTE_NOT_FOUND"], []))
+
+    def test_region_quote_matches_only_the_text_line(self):
+        for quote in ("верх, по центру", "кнопка", "Где", "Видно:", "Текст"):
+            with self.subTest(quote):
+                self.reset()
+                source = self.add_source("image", [self.REGION_BLOCK])
+                self.add_claim(source, {"kind": "region", "index": 1, "area": "верх, по центру, шапка", "quote": quote})
+                self.assertEqual(codes(self.run_case()), (["QUOTE_NOT_FOUND"], []))
+
+    def test_region_area_differing_from_the_block_is_a_warning(self):
+        source = self.add_source("image", [self.REGION_BLOCK])
+        self.add_claim(source, {"kind": "region", "index": 1, "area": "низ, справа", "quote": "Подключить"})
+        self.assertEqual(codes(self.run_case()), ([], ["REGION_AREA_DIFFERS"]))
+
+    def test_region_locator_needs_an_area(self):
+        source = self.add_source("image", [self.REGION_BLOCK])
+        self.add_claim(source, {"kind": "region", "index": 1})
+        self.assertIn("SCHEMA", [f.code for f in self.run_case().errors])
+
+    def test_image_without_observations_cannot_be_cited(self):
+        source = self.add_source("image", [], status="partial")
+        self.add_claim(source, {"kind": "region", "index": 1, "area": "верх"}, status="unconfirmed")
+        self.assertEqual(codes(self.run_case()), (["LOCATOR_NOT_FOUND"], []))
+
     def test_corrupt_extraction_is_file_corrupt_once_and_never_a_crash(self):
         for data in (b"\xff\xfe", b"not json\n", b'{"n": 1, "locator": {}}\n', b"[]\n"):
             with self.subTest(data):

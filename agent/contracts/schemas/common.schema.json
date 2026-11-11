@@ -229,6 +229,30 @@
               "type": "string"
             }
           }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "index",
+            "area"
+          ],
+          "properties": {
+            "kind": {
+              "const": "region"
+            },
+            "index": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "area": {
+              "$ref": "#/$defs/text"
+            },
+            "quote": {
+              "type": "string"
+            }
+          }
         }
       ]
     },

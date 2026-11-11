@@ -24,7 +24,7 @@ from jsonschema.validators import extend
 from referencing import Registry, Resource
 
 import calc_engine
-from evidence_blocks import load_blocks, matching_blocks, quote_in
+from evidence_blocks import load_blocks, matching_blocks, quotable_text, quote_in, region_area_differs
 
 CONTRACTS = Path(__file__).resolve().parent.parent / "agent" / "contracts"
 SCHEMAS = CONTRACTS / "schemas"
@@ -41,7 +41,7 @@ ERROR_CODES = frozenset({
 })
 WARNING_CODES = frozenset({
     "BASIS_UNCONFIRMED", "SOURCE_PARTIAL", "ACTION_UNKNOWN", "JOURNAL_TORN",
-    "CHECKPOINT_STALE", "CHECKPOINT_FALLBACK", "EXTRACT_MISSING", "CALC_UNVERIFIED",
+    "CHECKPOINT_STALE", "CHECKPOINT_FALLBACK", "EXTRACT_MISSING", "CALC_UNVERIFIED", "REGION_AREA_DIFFERS",
 })
 ALL_CODES = ERROR_CODES | WARNING_CODES
 
@@ -74,6 +74,7 @@ LOCATOR_SOURCE_TYPES = {
     "cells": {"xlsx"},
     "rows": {"csv"},
     "doc_table": {"docx", "web"},
+    "region": {"image"},
 }
 UNREADABLE_EXTRACTION = {"empty", "unreadable", "unsupported", "over_limit", "unavailable"}
 PREFIX_ALTERNATIVES = "SRC|CLM|CALC|Q|OPT|DEC|ACT|CKP"
@@ -637,8 +638,10 @@ class Validator:
         found = matching_blocks(blocks, locator)
         if not found:
             self.error("LOCATOR_NOT_FOUND", file, owner, f"locator {locator['kind']} points to no block of {source['id']}")
-        elif "quote" in locator and not any(quote_in(locator["quote"], block["text"]) for block in found):
+        elif "quote" in locator and not any(quote_in(locator["quote"], quotable_text(block)) for block in found):
             self.error("QUOTE_NOT_FOUND", file, owner, f"quote is not in the text of the block of {source['id']}")
+        if region_area_differs(found, locator):
+            self.warn("REGION_AREA_DIFFERS", file, owner, f"area of the region locator differs from the observation of {source['id']}")
 
     def check_claims(self):
         file = "evidence/claims.json"

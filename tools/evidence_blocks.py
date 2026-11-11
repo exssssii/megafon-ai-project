@@ -67,6 +67,8 @@ def _matches(block: dict, locator: dict) -> bool:
         return False
     if kind == "paragraph":
         return _number(own.get("index")) == locator["index"]
+    if kind == "region":
+        return _number(own.get("index")) == locator["index"]
     if kind == "page":
         return _number(own.get("page")) == locator["page"]
     if kind == "doc_table":
@@ -87,6 +89,27 @@ def _matches(block: dict, locator: dict) -> bool:
 def matching_blocks(blocks: list[dict], locator: dict) -> list[dict]:
     """Blocks the locator points to; empty when it points nowhere."""
     return [block for block in blocks if _matches(block, locator)]
+
+
+TEXT_LINE = "\nТекст:"
+
+
+def quotable_text(block: dict) -> str:
+    """The text a quote may come from.
+
+    For an observation of an image (`region`) it is only the part after `Текст:`: the place and the
+    description are the agent's words, not what the picture shows.
+    """
+    text = block["text"]
+    if isinstance(block.get("locator"), dict) and block["locator"].get("kind") == "region":
+        return text.rpartition(TEXT_LINE)[2].strip() if TEXT_LINE in text else ""
+    return text
+
+
+def region_area_differs(found: list[dict], locator: dict) -> bool:
+    """A region locator names an area, but no block it points to has the same one."""
+    return (locator.get("kind") == "region" and bool(found)
+            and all(block["locator"].get("area") != locator.get("area") for block in found))
 
 
 def collapse(text: str) -> str:

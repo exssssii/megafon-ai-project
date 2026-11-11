@@ -1,7 +1,8 @@
 """Register case materials and read them back with contract locators.
 
-Commands: inspect, add, add-web, fetch-web, show, find. `fetch-web` downloads a public
-page itself, `add-web` stores what the environment read. Only `fetch-web` opens the network.
+Commands: inspect, add, add-web, fetch-web, capture-web, add-observations, show, find. `fetch-web` downloads
+a public page itself, `add-web` stores what the environment read, `capture-web` takes screenshots of a
+public page with the optional browser. Only `fetch-web` and `capture-web` open the network.
 
 Exit codes: 0 done, 2 no text, 3 over a limit, 4 nothing written, 5 internal failure.
 The first output line is a JSON report without material content. Registry and files
@@ -23,13 +24,17 @@ from material_extract import (
     BadOption,
     Extraction,
     Options,
+    TALL_IMAGE_NOTE,
+    TALL_IMAGE_RATIO,
     extract,
     load_limits,
     numbered,
     text_blocks,
 )
 import checkpoint
+import observations
 from validate_project import SYNTHETIC_PREFIX, is_http_url
+import web_capture
 from web_fetch import FetchError, Page, fetch_page  # noqa: F401
 
 EXIT_OK, EXIT_NO_TEXT, EXIT_OVER_LIMIT, EXIT_REFUSED, EXIT_INTERNAL = 0, 2, 3, 4, 5
@@ -141,8 +146,8 @@ class Case:
     def write_extraction(self, source_id: str, result: Extraction) -> None:
         path = self.extracted_path(source_id)
         if result.status in TEXT_STATUSES:
-            lines = (json.dumps(block, ensure_ascii=False) for block in result.blocks)
-            write_atomic(path, ("\n".join(lines) + "\n").encode("utf-8"))
+            lines = [json.dumps(block, ensure_ascii=False) for block in result.blocks]
+            write_atomic(path, ("\n".join(lines) + "\n").encode("utf-8") if lines else b"")
         else:
             path.unlink(missing_ok=True)
         write_atomic(path.with_suffix(".report.json"), dumps(result.report))
@@ -346,6 +351,9 @@ def cmd_add(args, limits: dict) -> int:
     if existing is not None:
         return repeat_add(case, existing, args, options, limits, origin)
     result = extract(args.file, limits, options)
+    if kind == "image" and result.status in ("unreadable", "empty"):
+        emit(result.report | {"registered": False})
+        return EXIT_NO_TEXT
     source_id = case.next_id()
     path, copied = stored_path(case, args.file, sha256, source_id)
     stamp = now()
@@ -382,14 +390,20 @@ def read_incoming(case: Case, path: Path, limits: dict) -> str:
     return text
 
 
-def check_sources_limit(case: Case) -> None:
+def sources_room(case: Case) -> tuple[int | None, int | None, int]:
+    """Limit of sources in the brief (None when there is none), what is left, what is used."""
     try:
         budget = checkpoint.research_budget(case.root)
     except checkpoint.Refused:
-        return
+        budget = None
     limit = budget["sources"] if budget else None
     used = checkpoint.web_sources_used(case.records)
-    if limit is not None and used >= limit:
+    return limit, None if limit is None else limit - used, used
+
+
+def check_sources_limit(case: Case) -> None:
+    limit, room, used = sources_room(case)
+    if room is not None and room <= 0:
         raise Refused("лимит источников брифа исчерпан: ничего не записано", refused="budget_exhausted",
                       used=used, limit=limit)
 
@@ -479,6 +493,143 @@ def cmd_add_web(args, limits: dict) -> int:
         except OSError:
             report["incoming_left"] = True
     emit(report)
+    return exit_code(status)
+
+
+def cmd_capture_web(args, limits: dict) -> int:
+    case = Case(args.case)
+    if not is_http_url(args.url):
+        raise Refused("--url должен быть адресом http или https")
+    require_open_read(case)
+    unavailable = "Снимки сайтов недоступны: нужна необязательная утилита, ничего не записано"
+    if not web_capture.available():
+        raise Refused(unavailable, refused="capture_unavailable", install=web_capture.install_commands())
+    limit, room, used = sources_room(case)
+    if room is not None and room <= 0:
+        raise Refused("лимит источников брифа исчерпан: ничего не записано", refused="budget_exhausted",
+                      used=used, limit=limit)
+    allowed = limits["max_capture_parts"] if room is None else min(limits["max_capture_parts"], room)
+    try:
+        shot = web_capture.capture(args.url, mobile=args.mobile, max_parts=allowed,
+                                   timeout=limits["capture_timeout_seconds"])
+    except web_capture.CaptureError as error:
+        if error.code == "capture_unavailable":
+            raise Refused(unavailable, refused="capture_unavailable", install=web_capture.install_commands()) from None
+        raise Refused("снимок не получен: ничего не записано", fetch_error=error.code,
+                      http_status=error.http_status) from None
+    stamp = now()
+    shortfall = f"Снято {len(shot.parts)} из {shot.total_parts} экранов." if len(shot.parts) < shot.total_parts else None
+    ids, written = [], []
+    try:
+        for number, data in enumerate(shot.parts, 1):
+            source_id = case.next_id()
+            target = case.root / "sources" / f"capture-{source_id}.png"
+            written.append((source_id, target))
+            write_atomic(target, data)
+            result = extract(target, limits)
+            if result.status != "partial":
+                raise Refused("снимок браузера не прочитан как изображение: ничего не записано",
+                              fetch_error="capture_unreadable")
+            if shortfall and number == len(shot.parts):
+                result.report["capture_incomplete"] = shortfall
+                result.summary = f"{shortfall} {result.summary}"
+            case.records.append({
+                "id": source_id,
+                "created_at": stamp,
+                "record_status": "active",
+                "type": "image",
+                "title": f"{args.title}, экран {number} из {shot.total_parts}",
+                "location": {"path": target.relative_to(case.root).as_posix()},
+                "origin": "public_web",
+                "allowed": True,
+                "retrieved_at": stamp,
+                "sha256": sha256_of(target),
+                "source_url": shot.final_url,
+                "extraction": extraction_field(result),
+            })
+            case.write_extraction(source_id, result)
+            ids.append(source_id)
+        case.save()
+    except BaseException:
+        for source_id, target in written:
+            extracted = case.extracted_path(source_id)
+            for path in (target, extracted, extracted.with_suffix(".report.json")):
+                path.unlink(missing_ok=True)
+        raise
+    emit({"ids": ids, "parts": len(ids), "total_parts": shot.total_parts, "final_url": shot.final_url})
+    return EXIT_OK
+
+
+def image_summary(report: dict) -> str:
+    """Format, size and aspect note of a registered image, rebuilt from the saved extraction report."""
+    try:
+        text = f"Изображение {report['format'].upper()} {report['width']}×{report['height']}."
+        tall = report["height"] / report["width"] > TALL_IMAGE_RATIO
+    except (KeyError, TypeError, ZeroDivisionError, AttributeError):
+        return ""
+    return text + (" " + TALL_IMAGE_NOTE if tall else "")
+
+
+def observation_limits(report: dict, parsed) -> str:
+    """Capture shortfall first, then the picture, then what the observations say."""
+    parts = [report.get("capture_incomplete"), image_summary(report)]
+    if parsed.screen != observations.TARGET:
+        parts.append(f"Экран не целевой: {parsed.screen}, {parsed.screen_note}. Наблюдения не сохранены.")
+    else:
+        parts.append(f"Наблюдений: {len(parsed.items)}.")
+        parts.append(f"Не разобрано: {parsed.unresolved}" + ("" if parsed.unresolved.endswith(".") else ".")
+                     if parsed.unresolved else "Не разобранного нет.")
+    return " ".join(part for part in parts if part)
+
+
+def cmd_add_observations(args, limits: dict) -> int:
+    case = Case(args.case)
+    record = case.get(args.source)
+    if record["type"] != "image":
+        raise Refused("наблюдения записываются только для изображения", id=record["id"])
+    if record["record_status"] != "active":
+        raise Refused("источник отозван: наблюдения не записываются", id=record["id"])
+    if record["extraction"]["status"] not in ("ok", "partial", "unavailable"):
+        raise Refused("изображение не прочитано: наблюдения не записываются", id=record["id"],
+                      extraction_status=record["extraction"]["status"])
+    text = read_incoming(case, args.text_file, limits)
+    try:
+        parsed = observations.parse(text)
+    except observations.FormatError as error:
+        raise Refused("файл наблюдений не по формату: ничего не записано", format_error=error.reason) from None
+    referencing = case.references(record["id"])
+    if referencing:
+        raise Refused("на источник ссылаются записи: отзовите его и зарегистрируйте изображение заново",
+                      id=record["id"], referencing=referencing)
+    report_path = case.extracted_path(record["id"]).with_suffix(".report.json")
+    try:
+        saved = json.loads(report_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        saved = {}
+    target = parsed.screen == observations.TARGET
+    blocks = [{"n": item.index, "locator": {"kind": "region", "index": item.index, "area": item.area},
+               "text": f"Где: {item.area}\nВидно: {item.seen}\nТекст: {item.text}"}
+              for item in parsed.items] if target else []
+    limits_text = observation_limits(saved, parsed)
+    if not target:
+        status = "unavailable"
+    else:
+        status = "ok" if parsed.unresolved is None and not saved.get("capture_incomplete") else "partial"
+    report = saved | {"status": status, "blocks": len(blocks), "screen": parsed.screen}
+    result = Extraction(status, blocks, report)
+    record["extraction"] = {"status": "partial", "complete": False, "limits": "Наблюдения записываются."}
+    case.save()
+    case.write_extraction(record["id"], result)
+    record["extraction"] = {"status": status, "complete": status == "ok", "limits": limits_text}
+    case.save()
+    done = {"id": record["id"], "screen": parsed.screen, "blocks": len(blocks)} | record["extraction"]
+    if parsed.items and not target:
+        done["items_ignored"] = len(parsed.items)
+    try:
+        args.text_file.unlink()
+    except OSError:
+        done["incoming_left"] = True
+    emit(done)
     return exit_code(status)
 
 
@@ -616,6 +767,19 @@ def build_parser() -> Parser:
     fetched.add_argument("--url", required=True)
     fetched.add_argument("--title", required=True)
     fetched.set_defaults(run=cmd_fetch_web)
+
+    captured = commands.add_parser("capture-web")
+    captured.add_argument("case", type=Path)
+    captured.add_argument("--url", required=True)
+    captured.add_argument("--title", required=True)
+    captured.add_argument("--mobile", action="store_true")
+    captured.set_defaults(run=cmd_capture_web)
+
+    observed = commands.add_parser("add-observations")
+    observed.add_argument("case", type=Path)
+    observed.add_argument("source")
+    observed.add_argument("--text-file", type=Path, required=True)
+    observed.set_defaults(run=cmd_add_observations)
 
     show = commands.add_parser("show")
     show.add_argument("case", type=Path)

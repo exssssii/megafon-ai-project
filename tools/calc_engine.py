@@ -10,7 +10,7 @@ import re
 import unicodedata
 from decimal import ROUND_HALF_UP, Decimal, DecimalException, InvalidOperation, localcontext
 
-from evidence_blocks import matching_blocks, parse_range, quote_in
+from evidence_blocks import matching_blocks, parse_range, quotable_text, quote_in
 
 AGGREGATES = ("value", "sum", "mean", "min", "max", "count")
 TABLE_TYPES = frozenset({"csv", "xlsx"})
@@ -299,7 +299,7 @@ def text_input(blocks: list[dict], locator: dict) -> dict:
     found = matching_blocks(blocks, place)
     if not found:
         raise CalcError("block_missing", "локатор не указывает ни на один блок")
-    if not any(quote_in(quote, block["text"]) for block in found):
+    if not any(quote_in(quote, quotable_text(block)) for block in found):
         raise CalcError("quote_not_found", "цитаты нет в тексте блока")
     numbers = numbers_in_text(quote)
     if len(numbers) != 1:

@@ -5,5 +5,8 @@
   "max_table_rows": 100000,
   "max_table_columns": 200,
   "max_table_cells": 2000000,
-  "max_output_chars": 20000
+  "max_output_chars": 20000,
+  "max_image_side": 8000,
+  "max_capture_parts": 4,
+  "capture_timeout_seconds": 30
 }

@@ -15,6 +15,8 @@ import logging
 from pathlib import Path
 import re
 
+from image_header import Animated, NotImage, read_header
+
 LIMITS_FILE = Path(__file__).with_name("input_limits.json")
 SUPPORTED = {
     ".md": "md",
@@ -23,7 +25,14 @@ SUPPORTED = {
     ".pdf": "pdf",
     ".csv": "csv",
     ".xlsx": "xlsx",
+    ".png": "image",
+    ".jpg": "image",
+    ".jpeg": "image",
+    ".webp": "image",
 }
+IMAGE_FORMATS = {".png": "png", ".jpg": "jpeg", ".jpeg": "jpeg", ".webp": "webp"}
+TALL_IMAGE_RATIO = 2.5
+TALL_IMAGE_NOTE = "Изображение очень высокое: детали могут потеряться, лучше фрагменты."
 TEXT_STATUSES = {"ok", "partial"}
 FORMULA_NO_VALUE = "<нет значения формулы>"
 NUMBER = re.compile(r"[+-]?\d[\d  ]*(?:[.,]\d+)?%?")
@@ -65,12 +74,15 @@ class Extraction:
     blocks: list[dict] = field(default_factory=list)
     report: dict = field(default_factory=dict)
     notes: list[str] = field(default_factory=list)
+    summary: str | None = None
 
     @property
     def complete(self) -> bool:
         return self.status == "ok"
 
     def limits_text(self) -> str:
+        if self.summary is not None:
+            return " ".join([self.summary, *self.notes])
         lead = "Прочитан в границах формата." if self.complete else "Прочитан не полностью."
         if self.status not in TEXT_STATUSES:
             lead = "Текст не извлечён."
@@ -471,6 +483,25 @@ def scan_sheet(sheet, origin_sheet, limits, cells, blocks, no_value, cached) -> 
     return {"name": sheet.title, "rows": count, "columns": width, "hidden": hidden}, cells
 
 
+def read_image(path: Path, kind: str, limits: dict, options: Options) -> Extraction:
+    """Register the picture itself: its header is read, its pixels are not. The text comes from observations."""
+    try:
+        info = read_header(path.read_bytes())
+    except Animated as error:
+        raise Unreadable(str(error)) from error
+    except NotImage as error:
+        raise Unreadable("файл не является изображением нужного формата") from error
+    if info.format != IMAGE_FORMATS[path.suffix.lower()]:
+        raise Unreadable("содержимое файла не соответствует его расширению")
+    check("image_side", max(info.width, info.height), limits["max_image_side"])
+    notes = ["Наблюдения не записаны."]
+    if info.height / info.width > TALL_IMAGE_RATIO:
+        notes.append(TALL_IMAGE_NOTE)
+    report = {"format": info.format, "width": info.width, "height": info.height}
+    summary = f"Изображение {info.format.upper()} {info.width}×{info.height}."
+    return Extraction("partial", [], report, notes, summary)
+
+
 READERS = {
     "md": read_text,
     "txt": read_text,
@@ -478,6 +509,7 @@ READERS = {
     "pdf": read_pdf,
     "csv": read_csv,
     "xlsx": read_xlsx,
+    "image": read_image,
 }
 
 
@@ -503,7 +535,7 @@ def extract(path: Path, limits: dict, options: Options | None = None) -> Extract
         return failed("unreadable", base, str(error))
     except Exception as error:
         return failed("unreadable", base, f"ошибка разбора: {type(error).__name__}")
-    if result.status in TEXT_STATUSES and not result.blocks:
+    if result.status in TEXT_STATUSES and not result.blocks and kind != "image":
         result.status = "empty"
     result.blocks = numbered(result.blocks)
     result.report = base | result.report | {"status": result.status, "blocks": len(result.blocks)}

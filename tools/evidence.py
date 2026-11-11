@@ -18,7 +18,7 @@ import re
 import sys
 from pathlib import Path
 
-from evidence_blocks import collapse, load_blocks, matching_blocks, quote_in
+from evidence_blocks import collapse, load_blocks, matching_blocks, quotable_text, quote_in
 from material_extract import TEXT_STATUSES, load_limits
 from read_material import (
     DATA_NOTICE,
@@ -373,7 +373,7 @@ def build_reference(case: Case, cache: dict, item: dict, contradiction: bool) ->
     found = matching_blocks(blocks, locator)
     if not found:
         raise Refused("локатор не указывает ни на один блок", id=source["id"])
-    if not any(quote_in(item["quote"], block["text"]) for block in found):
+    if not any(quote_in(item["quote"], quotable_text(block)) for block in found):
         raise Refused("цитаты нет в тексте блока", id=source["id"], block=item["block"])
     reference = {"source_id": source["id"], "locator": locator | {"quote": item["quote"]}, "note": item["note"]}
     if "resolution" in item:
@@ -967,7 +967,7 @@ class Tracer:
                         quote = locator.get("quote")
                         if not found:
                             warnings.append("locator_not_found")
-                        elif quote is not None and not any(quote_in(quote, block["text"]) for block in found):
+                        elif quote is not None and not any(quote_in(quote, quotable_text(block)) for block in found):
                             warnings.append("quote_not_found")
                     except (KeyError, TypeError):
                         warnings.append("locator_not_found")

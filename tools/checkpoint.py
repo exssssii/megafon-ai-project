@@ -363,8 +363,9 @@ def has_open_action(lines: list[dict], kind: str) -> bool:
 
 
 def web_sources_used(records: list[dict]) -> int:
-    """Pages with text: a page that did not open stays visible and spends nothing, user files are not research."""
-    return sum(record.get("record_status") == "active" and record.get("type") == "web"
+    """Pages with text and public screenshots: a page that did not open stays visible and spends nothing, user files are not research."""
+    return sum(record.get("record_status") == "active"
+               and (record.get("type") == "web" or (record.get("type") == "image" and record.get("origin") == "public_web"))
                and record.get("extraction", {}).get("status") in ("ok", "partial") for record in records)
 
 

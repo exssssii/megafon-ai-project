@@ -13,8 +13,10 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
+sys.path.insert(0, str(ROOT / "tests"))
 
 import checkpoint  # noqa: E402
+import image_bytes  # noqa: E402
 import material_extract  # noqa: E402
 import read_material  # noqa: E402
 import validate_project  # noqa: E402
@@ -825,6 +827,114 @@ class Web(Base):
         self.assertEqual(code, REFUSED)
         self.assertTrue(outside.exists() and wrong_encoding.exists())
         self.assertEqual(self.sources(), [])
+
+
+class Images(Base):
+    def test_image_png_registers_without_blocks(self):
+        code, report, _ = self.add(self.write("screen.png", image_bytes.png_bytes(1366, 768)))
+        self.assertEqual((code, report["status"], report["complete"]), (OK, "partial", False))
+        self.assertIn("PNG 1366×768", report["limits"])
+        record = self.sources()[0]
+        self.assertEqual((record["type"], record["location"]), ("image", {"path": "sources/screen.png"}))
+        self.assertTrue((self.case / "sources" / "screen.png").is_file())
+        code, shown, lines = self.run_tool("show", self.case, record["id"])
+        self.assertEqual((code, shown["blocks_total"], lines), (OK, 0, []))
+        self.assertEqual(self.blocks(record["id"]), [])
+        report = self.validate()
+        self.assertEqual((report["errors"], report["warnings"]), ([], []))
+
+    def test_image_jpeg_and_webp_dimensions(self):
+        cases = {
+            "a.jpg": (image_bytes.jpeg_header(390, 844), "JPEG 390×844"),
+            "b.jpeg": (image_bytes.jpeg_header(1024, 600), "JPEG 1024×600"),
+            "c.webp": (image_bytes.webp_vp8x(800, 450), "WEBP 800×450"),
+            "d.webp": (image_bytes.webp_lossy(640, 480), "WEBP 640×480"),
+            "e.webp": (image_bytes.webp_lossless(320, 200), "WEBP 320×200"),
+        }
+        for name, (data, expected) in cases.items():
+            with self.subTest(name):
+                code, report, _ = self.add(self.write(name, data))
+                self.assertEqual(code, OK, report)
+                self.assertIn(expected, report["limits"])
+        self.assert_valid()
+
+    def test_image_wrong_magic_is_unreadable(self):
+        cases = {
+            "fake.png": image_bytes.jpeg_header(100, 100),
+            "text.png": b"this is not an image at all, just text",
+            "fake.jpg": image_bytes.png_bytes(10, 10),
+            "fake.webp": image_bytes.png_bytes(10, 10),
+        }
+        for name, data in cases.items():
+            with self.subTest(name):
+                code, report, _ = self.add(self.write(name, data))
+                self.assertEqual((code, report["status"], report["registered"]), (NO_TEXT, "unreadable", False))
+        self.assert_nothing_written()
+
+    def test_image_truncated_header(self):
+        for name, data in {"cut.png": image_bytes.png_bytes(50, 50)[:20],
+                           "cut.jpg": image_bytes.jpeg_header(50, 50)[:12],
+                           "cut.webp": image_bytes.webp_vp8x(50, 50)[:24]}.items():
+            with self.subTest(name):
+                self.assertEqual(self.add(self.write(name, data))[0], NO_TEXT)
+        self.assert_nothing_written()
+
+    def test_image_cut_before_its_end_is_unreadable(self):
+        for name, data in {"half.png": image_bytes.png_bytes(50, 50)[:-30],
+                           "half.jpg": image_bytes.jpeg_header(50, 50)[:-2]}.items():
+            with self.subTest(name):
+                self.assertEqual(self.add(self.write(name, data))[0], NO_TEXT)
+        self.assert_nothing_written()
+
+    def test_animated_image_is_unreadable_with_a_reason(self):
+        for name, data in {"anim.png": image_bytes.png_animated(50, 50),
+                           "anim.webp": image_bytes.webp_vp8x(50, 50, flags=0x02)}.items():
+            with self.subTest(name):
+                code, report, _ = self.add(self.write(name, data))
+                self.assertEqual((code, report["status"], report["registered"]), (NO_TEXT, "unreadable", False))
+                self.assertIn("анимация не поддерживается", json.dumps(report, ensure_ascii=False))
+        self.assert_nothing_written()
+
+    def test_image_side_over_limit(self):
+        code, report, _ = self.add(self.write("wide.png", image_bytes.png_bytes(9000, 100)))
+        self.assertEqual((code, report["status"]), (OVER, "over_limit"))
+        self.assertEqual(self.sources()[0]["extraction"]["status"], "over_limit")
+
+    def test_image_file_over_byte_limit(self):
+        path = self.write("big.png", image_bytes.png_bytes(100, 100))
+        with mock.patch.object(read_material, "load_limits",
+                               return_value=material_extract.load_limits() | {"max_file_bytes": 10}):
+            code, report, _ = self.add(path)
+        self.assertEqual((code, report["status"]), (OVER, "over_limit"))
+
+    def test_image_tall_aspect_note(self):
+        code, report, _ = self.add(self.write("tall.png", image_bytes.png_bytes(1000, 3000)))
+        self.assertEqual(code, OK)
+        self.assertIn("детали могут потеряться", report["limits"])
+        code, report, _ = self.add(self.write("normal.png", image_bytes.png_bytes(1000, 2000)))
+        self.assertNotIn("детали могут потеряться", report["limits"])
+
+    def test_repeat_add_of_an_image_returns_the_same_record(self):
+        path = self.write("screen.png", image_bytes.png_bytes(100, 100))
+        first = self.add(path)[1]["id"]
+        code, report, _ = self.add(path)
+        self.assertEqual((code, report["id"], report["existing"]), (OK, first, True))
+        self.assertEqual(len(self.sources()), 1)
+
+    def test_reading_options_do_not_apply_to_an_image(self):
+        self.assertEqual(self.add(self.write("s.png", image_bytes.png_bytes(10, 10)), "--delimiter", ";")[0], REFUSED)
+
+
+class ImageBudget(Base):
+    def test_public_web_images_count_in_budget(self):
+        def record(source_id, origin, status="partial", record_status="active"):
+            return {"id": source_id, "type": "image", "origin": origin, "record_status": record_status,
+                    "extraction": {"status": status}}
+
+        records = [record("SRC-0001", "public_web"), record("SRC-0002", "public_web", "ok"),
+                   record("SRC-0003", "user_provided"), record("SRC-0004", "public_web", "unavailable"),
+                   record("SRC-0005", "public_web", record_status="withdrawn")]
+        self.assertEqual(checkpoint.web_sources_used(records), 2)
 
 
 class Safety(Base):
