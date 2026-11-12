@@ -1250,6 +1250,13 @@ class SyntheticSources(Mutating):
         self.synthetic_claim()
         self.assertEqual(self.errors(), [])
 
+    def test_withdrawn_claim_on_synthetic_is_history(self):
+        # Like every other link rule, the check covers only active records (contract README).
+        self.add_synthetic()
+        self.synthetic_claim(kind="fact", status="withdrawn")
+        self.rec(CLAIMS, "CLM-0100", lambda r: r.update(status_reason="Синтетика не подтверждает факт."))
+        self.assertEqual(self.errors(), [])
+
     def test_synthetic_calc_input_refused(self):
         self.add_synthetic()
         item = {"name": "реплика", "source_id": "SRC-0050", "locator": {"kind": "section", "heading": "Вопрос 1"},

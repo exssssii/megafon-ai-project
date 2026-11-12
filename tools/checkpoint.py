@@ -50,6 +50,8 @@ DECISION_ID_RE = re.compile(r"DEC-[0-9]{4,}")
 CKP_NUMBER_RE = re.compile(r"CKP-([0-9]{4,})")
 SNAPSHOTS = "state/snapshots"
 BRIEF = "brief.md"
+# A changed persona card means a new conversation, so a restored checkpoint must bring the old cards back.
+PERSONAS = "research/interviews/personas.md"
 BUDGET_SECTION_RE = re.compile(r"^## Бюджет исследования[ \t]*\n(.*?)(?=^#{1,6} |\Z)", re.M | re.S)
 BUDGET_WORDS = {"searches": "(?:поиск|запрос)", "web_reads": "(?:чтени|страниц)", "sources": "источник"}
 BUDGET_RES = {key: re.compile(rf"(\d+)[^\S\n]+{stem}\w*|{stem}\w*(?:[^\S\n]+\w+)*?[^\S\n]*[:—–|-][^\S\n]*(\d+)", re.I)
@@ -525,7 +527,7 @@ def remove_stale_temporaries(root: Path) -> None:
 
 def collect_artifacts(root: Path) -> dict[str, str]:
     """Relative path to digest for the files a checkpoint pins; only files that exist."""
-    paths = [root / "brief.md", *(root / rel for rel in REGISTRIES)]
+    paths = [root / "brief.md", *(root / rel for rel in REGISTRIES), root / PERSONAS]
     if (root / "outputs").is_dir():
         paths += sorted((root / "outputs").rglob("*.md"))
     found = {}

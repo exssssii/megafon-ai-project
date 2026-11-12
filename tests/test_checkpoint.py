@@ -1315,6 +1315,20 @@ class ArtifactFolders(DemoCaseTestCase):
         self.assertNotIn("outputs/.draft.md", ck.collect_artifacts(self.case))
         self.assertEqual(self.save()[0], 0)
 
+    def test_persona_cards_are_pinned_and_restored(self):
+        personas = self.case / "research" / "interviews" / "personas.md"
+        personas.parent.mkdir(parents=True)
+        personas.write_text("# Персонажи\n\n## Скептик\n\nВладелец салона.\n", encoding="utf-8")
+        original = personas.read_bytes()
+        self.assertIn("research/interviews/personas.md", ck.collect_artifacts(self.case))
+        self.assertEqual(self.save()[0], 0)
+        saved = run("resume", self.case)[1]["id"]
+        personas.write_text("# Персонажи\n\nДругая карточка.\n", encoding="utf-8")
+        code, result = run("restore", self.case, "--checkpoint", saved, "--confirmed")
+        self.assertEqual((code, result["restored"]),
+                         (0, [{"path": "research/interviews/personas.md", "state": "changed"}]))
+        self.assertEqual(personas.read_bytes(), original)
+
     def test_stale_temporaries_are_removed_from_artifact_folders(self):
         stale = [self.case / ".tmp-1-brief.md", self.case / "outputs" / ".tmp-1-x.md",
                  self.case / "evidence" / ".tmp-1-claims.json"]
