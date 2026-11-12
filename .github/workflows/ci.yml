@@ -64,6 +64,10 @@ jobs:
               if ($LASTEXITCODE -ne 0) { throw "Dry run failed: $suite in $environment" }
             }
           }
+          foreach ($environment in 'claude', 'codex') {
+            pwsh -NoProfile -File scripts/live-entry.ps1 -Environment $environment -Suite hard -PlainChat -DryRun -Work (Join-Path $work "plain-$environment")
+            if ($LASTEXITCODE -ne 0) { throw "Dry run failed: plain chat in $environment" }
+          }
       - name: Test repository checks and push guard
         run: pwsh -NoProfile -File scripts/test-checks.ps1
       - name: Test local tools

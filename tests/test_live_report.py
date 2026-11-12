@@ -298,3 +298,21 @@ class RunHygiene(unittest.TestCase):
             (case / "state/actions.jsonl").write_text(
                 "\n".join(x if isinstance(x, str) else json.dumps(x) for x in lines), encoding="utf-8")
             self.assertEqual(report.runtime_lines(case), ["runtime_version given=2 missing=1"])
+
+
+class Timing(unittest.TestCase):
+    def test_seconds_of_each_reply_and_their_sum(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            results = Path(tmp)
+            self.assertEqual(report.timing_lines(results), ["time none"])
+            rows = ["c1-1\t2026-11-12T10:00:00Z\t2026-11-12T10:02:00Z\t120\texit 0",
+                    "c2\t2026-11-12T10:05:00Z\t2026-11-12T10:06:30Z\t90\tbroken inside the stage",
+                    "c3-1\tbad"]
+            # Windows PowerShell 5.1 writes the first line with a byte order mark.
+            (results / "timing.tsv").write_text("\n".join(rows), encoding="utf-8-sig")
+            self.assertEqual(report.timing_lines(results), [
+                "time c1-1 120s exit 0",
+                "time c2 90s broken inside the stage",
+                "time unreadable " + repr("c3-1\tbad"),
+                "time_total 210s",
+            ])

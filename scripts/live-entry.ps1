@@ -17,6 +17,9 @@
 # Project skills (E14) are on and the skills built into the CLI are off, so a run sees exactly the
 # skills of .claude/skills or .agents/skills; -NoSkills turns the project skills off too, for the
 # comparison of a run with and without them. checks.txt records which way the run went.
+# -PlainChat runs the suite hard as the plain chat of the comparison E06: the same replies to the
+# same model in a clone with nothing of the product left, only the inbox, the projects folder and
+# the Python environment. Every suite writes timing.tsv with the start and end of each reply.
 [CmdletBinding()]
 param(
     [ValidateSet('codex', 'claude')] [string] $Environment = 'codex',
@@ -29,6 +32,7 @@ param(
     [string] $Handoff = '',
     [int] $KillMinutes = 15,
     [switch] $NoSkills,
+    [switch] $PlainChat,
     [switch] $DryRun
 )
 $ErrorActionPreference = 'Stop'
@@ -47,8 +51,11 @@ $hardRun = $Suite -eq 'hard' -or $fromFinal
 $fullRun = $Suite -eq 'e2e' -or $Suite -eq 'continue' -or $Suite -eq 'interviews' -or $hardRun
 if (($Suite -eq 'continue' -or $fromFinal) -and -not $Handoff) { throw "The suite $Suite needs -Handoff with the transfer archive" }
 if ($Case -ne 'retention-smb' -and -not ($hardRun -or $Suite -eq 'continue')) { throw 'Only the suites hard, faults, finish and continue take -Case' }
+if ($PlainChat -and $Suite -ne 'hard') { throw 'Only the suite hard takes -PlainChat' }
+# The plain chat has no skills of its own, and an empty list must not read as a failed check.
+if ($PlainChat) { $NoSkills = $true }
 if ($Handoff) { $Handoff = (Resolve-Path -LiteralPath $Handoff).Path }
-if (-not $Work) { $Work = Join-Path (Split-Path -Parent $repo) $(switch ($Suite) { 'entry' { 'b07-live' } 'strategy' { 'b08-live' } 'e2e' { "b09-live-$Environment" } 'continue' { "b09-continue-$Environment-$Case" } 'hard' { "b11-live-$Environment-$Case" } 'faults' { "b11-faults-$Environment-$Case" } 'finish' { "b11-finish-$Environment-$Case" } 'interviews' { "e03-interviews-$Environment" } }) }
+if (-not $Work) { $Work = Join-Path (Split-Path -Parent $repo) $(switch ($Suite) { 'entry' { 'b07-live' } 'strategy' { 'b08-live' } 'e2e' { "b09-live-$Environment" } 'continue' { "b09-continue-$Environment-$Case" } 'hard' { if ($PlainChat) { "e06-chat-$Environment-$Case" } else { "b11-live-$Environment-$Case" } } 'faults' { "b11-faults-$Environment-$Case" } 'finish' { "b11-finish-$Environment-$Case" } 'interviews' { "e03-interviews-$Environment" } }) }
 $Work = [IO.Path]::GetFullPath($Work)
 # A path like C:folder is relative to the current folder, and a clone inside the
 # repository makes its working tree dirty for every later run.
@@ -232,14 +239,26 @@ if ($Suite -eq 'entry') {
         @('examples', 'tools\make_acceptance_cases.py', 'tests', 'scripts', '.git')
     foreach ($path in $hidden) { Remove-Item -LiteralPath (Join-Path $clone $path) -Recurse -Force }
     foreach ($path in $hidden) { if (Test-Path -LiteralPath (Join-Path $clone $path)) { throw "Still in the clone: $path" } }
-    $ErrorActionPreference = 'Continue'
-    foreach ($tool in @('tools\gate.py', 'tools\case.py', 'tools\checkpoint.py', 'tools\accounting.py')) {
-        & $python (Join-Path $clone $tool) --help *> $null
-        if ($LASTEXITCODE -ne 0) { throw "$tool does not start without the removed files" }
+    if ($PlainChat) {
+        # Everything else is the product: instructions, knowledge, tools, skills, settings and hooks.
+        # The environment keeps the generic libraries that read documents and tables.
+        $plainKeep = @('inbox', 'projects', '.venv')
+        Get-ChildItem -LiteralPath $clone -Force | Where-Object { $_.Name -notin $plainKeep } |
+            ForEach-Object { Remove-Item -LiteralPath $_.FullName -Recurse -Force }
+        $left = @(Get-ChildItem -LiteralPath $clone -Force | Where-Object { $_.Name -notin $plainKeep } | ForEach-Object Name)
+        if ($left) { throw "Still in the clone of the plain chat: $($left -join ', ')" }
+        $leftInProjects = @(Get-ChildItem -LiteralPath (Join-Path $clone 'projects') -Force | ForEach-Object Name)
+        if ($leftInProjects) { throw "The projects folder of the plain chat is not empty: $($leftInProjects -join ', ')" }
+    } else {
+        $ErrorActionPreference = 'Continue'
+        foreach ($tool in @('tools\gate.py', 'tools\case.py', 'tools\checkpoint.py', 'tools\accounting.py')) {
+            & $python (Join-Path $clone $tool) --help *> $null
+            if ($LASTEXITCODE -ne 0) { throw "$tool does not start without the removed files" }
+        }
+        & $python (Join-Path $clone 'tools\validate_project.py') 'agent/contracts/examples/valid/demo-case' *> $null
+        if ($LASTEXITCODE -ne 0) { throw 'The validator does not work without the removed files' }
+        $ErrorActionPreference = 'Stop'
     }
-    & $python (Join-Path $clone 'tools\validate_project.py') 'agent/contracts/examples/valid/demo-case' *> $null
-    if ($LASTEXITCODE -ne 0) { throw 'The validator does not work without the removed files' }
-    $ErrorActionPreference = 'Stop'
 } else {
     $report = @'
 # Отчёт службы поддержки «Постомат рядом» за третий квартал 2026 года
@@ -349,6 +368,31 @@ elseif (-not $DryRun) {
     if ($probeCode -ne 0 -or -not $prompt -or (-not $seen -and -not $NoSkills)) { $seen = 'error' }
 }
 Note-Check "skills $(if ($NoSkills) { 'off' } else { 'on' }) project=$($projectSkills -join ',') seen=$seen"
+if ($PlainChat) { Note-Check "plain_chat kept=$((Get-ChildItem -LiteralPath $clone -Force | ForEach-Object Name) -join ',')" }
+
+# Start and end of each reply, in UTC, measured here the same way for the agent and the plain chat.
+function Note-Time([string] $Name, [datetime] $Begun, [string] $Ended) {
+    $end = (Get-Date).ToUniversalTime()
+    $seconds = [int][math]::Round(($end - $Begun).TotalSeconds)
+    $line = "$Name`t$($Begun.ToString('o'))`t$($end.ToString('o'))`t$seconds`t$Ended"
+    Add-Content -LiteralPath (Join-Path $results 'timing.tsv') -Value $line -Encoding utf8
+}
+
+# What the plain chat wrote is its only memory: any file outside the inbox and the environment.
+function Written-Since([datetime] $Since) {
+    foreach ($item in Get-ChildItem -LiteralPath $clone -Force | Where-Object { $_.Name -notin '.venv', 'inbox' }) {
+        $files = if ($item.PSIsContainer) { Get-ChildItem -LiteralPath $item.FullName -Recurse -File -Force -ErrorAction SilentlyContinue } else { @($item) }
+        if ($files | Where-Object { $_.LastWriteTimeUtc -gt $Since } | Select-Object -First 1) { return $true }
+    }
+    return $false
+}
+
+function Save-Written([string] $Label) {
+    $target = Join-Path $results $Label
+    New-Item -ItemType Directory -Force -Path $target | Out-Null
+    Get-ChildItem -LiteralPath $clone -Force | Where-Object { $_.Name -notin '.venv', 'inbox' } |
+        ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $target -Recurse }
+}
 
 function Turn-Arguments([string] $Thread) {
     if ($Environment -eq 'claude') {
@@ -388,12 +432,14 @@ function Check-Reply([string] $Name, [string] $Log, [int] $Code) {
 }
 
 # Runs one reply and ends it the moment the file is rewritten: a break inside a stage.
+# Without a file the reply ends at the first file written outside the inbox: the plain chat
+# has no file of the agent to wait for.
 function Say-Until([string] $Name, [string] $Text, [string] $File) {
     if ($script:halted) { return '' }
     $log = Join-Path $results "$Name.jsonl"
     $replyFile = Join-Path $Work "$Name.txt"
     [IO.File]::WriteAllText($replyFile, $Text, $utf8)
-    Write-Host "== $Name, ends when $(Split-Path -Leaf $File) is written"
+    Write-Host "== $Name, ends when $(if ($File) { Split-Path -Leaf $File } else { 'any file' }) is written"
     $begun = (Get-Date).ToUniversalTime()
     try {
         $process = Start-Process -FilePath $Codex -ArgumentList (Turn-Arguments '') -NoNewWindow -PassThru `
@@ -404,13 +450,15 @@ function Say-Until([string] $Name, [string] $Text, [string] $File) {
     } catch {
         $script:halted = $true
         Add-Content -LiteralPath (Join-Path $results 'failures.txt') -Value "$Name did not start: $($_.Exception.Message)"
+        Note-Time $Name $begun 'did not start'
         return 'no break: the reply did not start'
     }
     $deadline = (Get-Date).AddMinutes($KillMinutes)
     $state = 'no break: the file was not written in time'
     while ((Get-Date) -lt $deadline) {
         if ($process.HasExited) { $state = 'no break: the reply ended by itself'; break }
-        if ((Test-Path -LiteralPath $File) -and (Get-Item -LiteralPath $File).LastWriteTimeUtc -gt $begun) { $state = 'broken inside the stage'; break }
+        $written = if ($File) { (Test-Path -LiteralPath $File) -and (Get-Item -LiteralPath $File).LastWriteTimeUtc -gt $begun } else { Written-Since $begun }
+        if ($written) { $state = 'broken inside the stage'; break }
         Start-Sleep -Seconds 2
     }
     if (-not $process.HasExited) {
@@ -423,6 +471,7 @@ function Say-Until([string] $Name, [string] $Text, [string] $File) {
     } elseif ($state -ne 'broken inside the stage') {
         Check-Reply $Name $log ([int] $process.ExitCode)
     }
+    Note-Time $Name $begun $state
     Set-Content -LiteralPath (Join-Path $results "$Name.break.txt") -Value $state -Encoding utf8
     Write-Host "   $state"
     return $state
@@ -433,11 +482,13 @@ function Say([string] $Name, [string] $Thread, [string] $Text) {
     $log = Join-Path $results "$Name.jsonl"
     $arguments = Turn-Arguments $Thread
     Write-Host "== $Name"
+    $begun = (Get-Date).ToUniversalTime()
     $previous = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     $Text | & $Codex @arguments 2>(Join-Path $results "$Name.stderr.txt") | Out-File -LiteralPath $log -Encoding utf8
     $code = $LASTEXITCODE
     $ErrorActionPreference = $previous
+    Note-Time $Name $begun "exit $code"
     if ($code -ne 0) { Write-Host "   exit code $code"; Add-Content -LiteralPath (Join-Path $results 'failures.txt') -Value "$Name exit $code" }
     Check-Reply $Name $log $code
     $id = Thread-Id $log
@@ -608,12 +659,32 @@ function Finish-Case([string] $Thread, [string] $Spent) {
     $null = Say 'c3-2a' $Thread "Новое условие утверждаю, как оно записано в брифе. $choice Перепиши что нужно и снова дойди до согласования порогов."
     $shown = (& $python $usageFile $results) -join ' '
     $null = Say 'c3-3' $Thread "Пороги подходят. $Spent $shown Заверши кейс."
-    if (-not $script:halted) { Save-Handoff 'handoff-final' }
+    if (-not $script:halted -and -not $PlainChat) { Save-Handoff 'handoff-final' }
 }
 
 function Run-Report {
-    & $python $reporterFile $results $commit "$version" $Model --marker $facts.Marker --case $caseId
+    $plainFlag = @(if ($PlainChat) { '--plain' })
+    & $python $reporterFile $results $commit "$version" $Model --marker $facts.Marker --case $caseId @plainFlag
     if ($LASTEXITCODE -ne 0) { throw 'Report failed' }
+}
+
+if ($DryRun -and $PlainChat) {
+    # The stripping is checked above; here the break on any written file and the copy of what was written.
+    $begun = (Get-Date).ToUniversalTime()
+    if (Written-Since $begun) { throw 'A file counts as written before the plain chat wrote anything' }
+    Start-Sleep -Seconds 1
+    [IO.File]::WriteAllText((Join-Path $clone 'projects\notes.md'), "# Заметки`n", $utf8)
+    if (-not (Written-Since $begun)) { throw 'The file written by the plain chat was not seen' }
+    [IO.File]::WriteAllText((Join-Path $clone 'inbox\later.md'), "# Материал`n", $utf8)
+    Save-Written 'written'
+    if (-not (Test-Path -LiteralPath (Join-Path $results 'written\projects\notes.md'))) { throw 'What the plain chat wrote was not kept' }
+    if (Test-Path -LiteralPath (Join-Path $results 'written\inbox')) { throw 'The inbox went into what the plain chat wrote' }
+    Note-Time 'dry' $begun 'dry run'
+    Run-Report
+    Set-Location -LiteralPath $repo
+    Remove-Item -LiteralPath $helpers -Recurse -Force
+    Write-Host 'Dry run passed: no model was called.'
+    exit 0
 }
 
 if ($DryRun) {
@@ -680,17 +751,20 @@ if ($Suite -eq 'e2e') {
     $null = Say 'c1-4' $t $facts.Impossible
     if ($Environment -eq 'claude') { $null = Say 'c1-5a' $t 'Пока не выбираю. Напиши предварительные стратегии.' }
     $null = Say 'c1-5' $t 'Мне не нравится этот вариант. Берём вариант развития из твоего сравнения, не тот, что ты рекомендовал; если их несколько, то первый. Стратегии пока не пиши.'
-    Check-Choice
+    # The plain chat keeps no record of the choice and no case folder to transfer.
+    if (-not $PlainChat) { Check-Choice }
     $null = Say 'c1-6' $t 'Пока остановимся, продолжим позже.'
-    if (-not $script:halted) { Save-Handoff }
+    if (-not $script:halted -and -not $PlainChat) { Save-Handoff }
 
-    $null = Say-Until 'c2' "Продолжи кейс $($facts.Name) и пиши стратегии." (Join-Path $caseFolder 'outputs\product-strategy.md')
-    Snapshot-Break
+    $strategyFile = if ($PlainChat) { '' } else { Join-Path $caseFolder 'outputs\product-strategy.md' }
+    $null = Say-Until 'c2' "Продолжи кейс $($facts.Name) и пиши стратегии." $strategyFile
+    if ($PlainChat) { if (-not $script:halted) { Save-Written 'after-break' } } else { Snapshot-Break }
 
     $t = Say 'c3-1' '' "Продолжи кейс $($facts.Name) и дойди до согласования порогов."
     $null = Say 'c3-2' $t "$($facts.Changed) Обнови что нужно и снова дойди до согласования порогов."
     Finish-Case $t 'На кейс у меня ушло около 20 минут.'
-    Run-Faults
+    # The failures of a tool and of a save test the agent itself: the plain chat has neither.
+    if ($PlainChat) { Save-Written 'written' } else { Run-Faults }
 } elseif ($Suite -eq 'faults') {
     Load-Handoff
     Run-Faults
