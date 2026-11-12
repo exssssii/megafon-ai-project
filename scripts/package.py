@@ -26,7 +26,8 @@ REQUIRED = ("README.md", "START.md", "AGENTS.md", "CLAUDE.md", "pyproject.toml",
             "agent/instructions/product-mode.md", "agent/contracts/README.md", "tools/case.py", "tools/checkpoint.py",
             "tools/validate_project.py", ".claude/settings.json",
             ".claude/skills/resuming-case/SKILL.md", ".claude/skills/running-interviews/SKILL.md", ".claude/skills/revising-on-new-data/SKILL.md",
-            ".agents/skills/resuming-case/SKILL.md", ".agents/skills/running-interviews/SKILL.md", ".agents/skills/revising-on-new-data/SKILL.md")
+            ".agents/skills/resuming-case/SKILL.md", ".agents/skills/running-interviews/SKILL.md", ".agents/skills/revising-on-new-data/SKILL.md",
+            "agent/roles/reviewer.md", ".claude/agents/reviewer.md", ".codex/agents/reviewer.toml", "tools/reviewer_guard.py")
 # Local state of a clone: work notes, environments, cases of a user, caches and personal settings.
 FORBIDDEN_PARTS = (".work", ".venv", "venv", "__pycache__", ".superpowers", ".pytest_cache", "node_modules", ".git")
 FORBIDDEN_NAMES = re.compile(r"(?i)^(?:\.env(?:\..*)?|settings\.local\.json|auth\.json|credentials(?:\..*)?|"

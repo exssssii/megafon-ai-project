@@ -20,6 +20,8 @@
 # -PlainChat runs the suite hard as the plain chat of the comparison E06: the same replies to the
 # same model in a clone with nothing of the product left, only the inbox, the projects folder and
 # the Python environment. Every suite writes timing.tsv with the start and end of each reply.
+# -NoReviewer removes the independent reviewer of E02 (its role and both declarations) from the
+# clone: the variant "agent without the E02 role" of the comparison E06, suite hard only. checks.txt says which way.
 [CmdletBinding()]
 param(
     [ValidateSet('codex', 'claude')] [string] $Environment = 'codex',
@@ -33,6 +35,7 @@ param(
     [int] $KillMinutes = 15,
     [switch] $NoSkills,
     [switch] $PlainChat,
+    [switch] $NoReviewer,
     [switch] $DryRun
 )
 $ErrorActionPreference = 'Stop'
@@ -52,10 +55,12 @@ $fullRun = $Suite -eq 'e2e' -or $Suite -eq 'continue' -or $Suite -eq 'interviews
 if (($Suite -eq 'continue' -or $fromFinal) -and -not $Handoff) { throw "The suite $Suite needs -Handoff with the transfer archive" }
 if ($Case -ne 'retention-smb' -and -not ($hardRun -or $Suite -eq 'continue')) { throw 'Only the suites hard, faults, finish and continue take -Case' }
 if ($PlainChat -and $Suite -ne 'hard') { throw 'Only the suite hard takes -PlainChat' }
+# The archives of faults and finish would mix both variants, other suites would overwrite the run with the role.
+if ($NoReviewer -and $Suite -ne 'hard') { throw 'Only the suite hard takes -NoReviewer' }
 # The plain chat has no skills of its own, and an empty list must not read as a failed check.
-if ($PlainChat) { $NoSkills = $true }
+if ($PlainChat) { $NoSkills = $true; $NoReviewer = $true }
 if ($Handoff) { $Handoff = (Resolve-Path -LiteralPath $Handoff).Path }
-if (-not $Work) { $Work = Join-Path (Split-Path -Parent $repo) $(switch ($Suite) { 'entry' { 'b07-live' } 'strategy' { 'b08-live' } 'e2e' { "b09-live-$Environment" } 'continue' { "b09-continue-$Environment-$Case" } 'hard' { if ($PlainChat) { "e06-chat-$Environment-$Case" } else { "b11-live-$Environment-$Case" } } 'faults' { "b11-faults-$Environment-$Case" } 'finish' { "b11-finish-$Environment-$Case" } 'interviews' { "e03-interviews-$Environment" } }) }
+if (-not $Work) { $Work = Join-Path (Split-Path -Parent $repo) $(switch ($Suite) { 'entry' { 'b07-live' } 'strategy' { 'b08-live' } 'e2e' { "b09-live-$Environment" } 'continue' { "b09-continue-$Environment-$Case" } 'hard' { if ($PlainChat) { "e06-chat-$Environment-$Case" } elseif ($NoReviewer) { "b11-live-$Environment-$Case-noreviewer" } else { "b11-live-$Environment-$Case" } } 'faults' { "b11-faults-$Environment-$Case" } 'finish' { "b11-finish-$Environment-$Case" } 'interviews' { "e03-interviews-$Environment" } }) }
 $Work = [IO.Path]::GetFullPath($Work)
 # A path like C:folder is relative to the current folder, and a clone inside the
 # repository makes its working tree dirty for every later run.
@@ -340,6 +345,20 @@ function Thread-Id([string] $Log) {
     }
     return ''
 }
+
+# The independent reviewer of E02. Without its role file the agent skips the review step.
+$reviewerFiles = @('agent/roles/reviewer.md', '.claude/agents/reviewer.md', '.codex/agents/reviewer.toml')
+if ($NoReviewer) {
+    foreach ($path in $reviewerFiles) {
+        $full = Join-Path $clone $path
+        if (Test-Path -LiteralPath $full) { Remove-Item -LiteralPath $full -Force }
+        if (Test-Path -LiteralPath $full) { throw "Still in the clone: $path" }
+    }
+} else {
+    $missing = @($reviewerFiles | Where-Object { -not (Test-Path -LiteralPath (Join-Path $clone $_)) })
+    if ($missing) { throw "The reviewer is on, but the clone lacks: $($missing -join ', ')" }
+}
+Note-Check "reviewer $(if ($NoReviewer) { 'off' } else { 'on' })"
 
 # Skills. Claude Code takes its settings as a file: a JSON string argument breaks on Windows.
 # The three overrides are skills of the plugins built into Claude Code 2.1.321; a skill that a
