@@ -81,8 +81,29 @@ class DotDotTraces(unittest.TestCase):
     def test_bare_cd_loses_the_folder(self):
         self.assertEqual(self.traces(shell("cd projects/case && cd && cat ../x")), {"unresolved": 1})
 
-    def test_redirect_after_cd_loses_the_folder(self):
-        self.assertEqual(self.traces(shell("cd projects/case 2>/dev/null && cat ../../../x")), {"unresolved": 1})
+    def test_a_redirect_does_not_change_where_cd_goes(self):
+        # From the final run: cd with 2>/dev/null and back to the clone root was counted unresolved.
+        command = "cd projects/direction-b2c 2>/dev/null; cd ../..; .venv/Scripts/python.exe tools/checkpoint.py x"
+        self.assertEqual(self.traces(shell(command)), {})
+        self.assertEqual(self.traces(shell("cd projects/case 2>/dev/null && cat ../../../x")), {"outside": 1})
+        self.assertEqual(self.traces(shell("cd projects/case >/dev/null 2>&1 && cat ../../x")), {})
+
+    def test_a_heredoc_body_is_text_not_a_path(self):
+        command = ("cd projects/case && cat > outputs/brief.md <<'EOF'\n- [pilot](../../inbox/case/pilot.pdf)\nEOF\n"
+                   "cat ../x")
+        self.assertEqual(self.traces(shell(command)), {"in_text": 1})
+
+    def test_a_powershell_here_string_body_is_text_not_a_path(self):
+        command = ("pwsh -Command '@'\ncontent = \"[a](../../inbox/a.csv) [b](../../inbox/b.csv)\"\n'@ | python -'")
+        self.assertEqual(self.traces(codex(command)), {"in_text": 2})
+
+    def test_the_command_after_a_heredoc_still_counts(self):
+        command = "python - <<EOF\nprint(1)\nEOF\ncat ../../secret"
+        self.assertEqual(self.traces(shell(command)), {"outside": 1})
+
+    def test_a_listing_of_the_folder_above_the_clone_is_a_trace(self):
+        command = "pwsh -Command 'Get-ChildItem -Path .. -Filter AGENTS.md -Recurse'"
+        self.assertEqual(self.traces(codex(command)), {"outside": 1})
 
     def test_dotdot_after_a_prefix_counts(self):
         self.assertEqual(self.traces(shell("curl -d @../secret x"), shell("ls -Path:..\\secret")), {"outside": 2})
@@ -132,7 +153,14 @@ class CutOffCommand(unittest.TestCase):
             done = {"id": "b", "type": "command_execution", "command": "cat ../b"}
             lines = [cut, {"type": "item.started", "item": done}, {"type": "item.completed", "item": done}]
             (results / "c2.jsonl").write_text("\n".join(json.dumps(x) for x in lines), encoding="utf-8")
-            self.assertEqual(report.hidden_traces(results, CLONE), {".. outside": 2})
+            self.assertEqual(report.hidden_traces(results, CLONE), ({".. outside": 2}, {}))
+
+    def test_dotdot_in_written_text_does_not_stop_the_run(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            results = Path(tmp)
+            item = {"id": "a", "type": "command_execution", "command": "cat > a.md <<EOF\n[x](../../inbox/x)\nEOF"}
+            (results / "c1.jsonl").write_text(json.dumps({"type": "item.completed", "item": item}), encoding="utf-8")
+            self.assertEqual(report.hidden_traces(results, CLONE), ({}, {".. in_text": 1}))
 
 
 class Canary(unittest.TestCase):
@@ -297,7 +325,17 @@ class RunHygiene(unittest.TestCase):
                      {"phase": "end"}, {"phase": "start", "runtime": {"version": "2.1.304"}}, "broken"]
             (case / "state/actions.jsonl").write_text(
                 "\n".join(x if isinstance(x, str) else json.dumps(x) for x in lines), encoding="utf-8")
-            self.assertEqual(report.runtime_lines(case), ["runtime_version given=2 missing=1"])
+            self.assertEqual(report.runtime_lines(case), ["runtime_version given=2 missing=1 session=0"])
+
+    def test_a_session_record_of_the_cost_is_no_missing_version(self):
+        # From the final run: the record of the cost the user reported carries no version of the environment.
+        with tempfile.TemporaryDirectory() as tmp:
+            case = Path(tmp)
+            (case / "state").mkdir()
+            lines = [{"phase": "start", "tool": "session", "runtime": {"version": None, "access": "subscription"}},
+                     {"phase": "start", "tool": "chat", "runtime": {"version": "2.1.304"}}]
+            (case / "state/actions.jsonl").write_text("\n".join(map(json.dumps, lines)), encoding="utf-8")
+            self.assertEqual(report.runtime_lines(case), ["runtime_version given=1 missing=0 session=1"])
 
 
 class Timing(unittest.TestCase):

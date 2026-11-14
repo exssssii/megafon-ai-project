@@ -22,8 +22,14 @@ LOST_FOLDER = re.compile(r"^\s*(?:\(\s*cd\b|\)|popd\b|Pop-Location\b|cd\s*$|cd\s
 PLAIN_TARGET = re.compile(r"""^(?:"[^"]*"|'[^']*'|\S+)[)'"]*$""")
 PATH_PREFIX = re.compile(r"^[^\/]*[:@{\[=](?=\.\.)")
 DOTDOT = re.compile(r"(?:^|[\\/:@{\[=])\.\.(?:$|[\\/])")
+# A redirect of the output does not change where cd goes.
+REDIRECT = re.compile(r"(?:\s+(?:\d?>>?|&>)\s*\S+)+\s*$")
+# The body of a heredoc or of a PowerShell here-string is text the command writes or runs,
+# not a path of the shell: a link ../../inbox/x in a markdown file written inside the clone.
+HEREDOC = re.compile(r"""<<-?\s*(['"]?)(\w+)\1[^\n]*\n(.*?)(?:\n[ \t]*\2[ \t]*(?=\r?\n|$)|\Z)""", re.DOTALL)
+HERESTRING = re.compile(r"""@(['"])[ \t]*\r?\n(.*?)(?:\r?\n\1@|\Z)""", re.DOTALL)
 HIDDEN = (r"docs[\\/]+acceptance|make_acceptance_cases|(?:retention-smb|direction-b2c)\.json"
-          r"|examples[\\/]+(?:retention-smb|direction-b2c)|megafon-AI-agent-hack|[\\/]results[\\/]|[\\/]held[\\/]"
+          r"|examples[\\/]+(?:retention-smb|direction-b2c)|megafon-AI-agent-hack|[\\/]results[\\/]|[\\/]held[\\/]|live-held-"
           r"|handoff-(?:final-)?(?:claude|codex)|handoff-(?:pack|in)")
 PATH_KEYS = ("file_path", "path", "notebook_path", "pattern", "glob")
 
@@ -78,8 +84,23 @@ def has_dotdot(token: str) -> bool:
     return "://" not in token and DOTDOT.search(token) is not None
 
 
+def split_text(command: str) -> tuple[str, list[str]]:
+    """The command without the bodies of its heredocs and here-strings, and those bodies."""
+    bodies: list[str] = []
+
+    def cut(match: re.Match, group: int) -> str:
+        bodies.append(match.group(group))
+        return match.group(0)[:match.start(group) - match.start(0)]
+    command = HEREDOC.sub(lambda m: cut(m, 3), command)
+    return HERESTRING.sub(lambda m: cut(m, 2), command), bodies
+
+
 def dotdot_traces(calls: list[Call], clone: str) -> dict[str, int]:
-    """Paths with .. that leave the clone or cannot be followed, in the calls of one reply."""
+    """Paths with .. that leave the clone or cannot be followed, in the calls of one reply.
+
+    A .. in the text a command writes or runs is counted apart as in_text: it is no path of
+    the shell, so it does not stop the run from counting, but it is shown for a manual look.
+    """
     root = normal(clone).rstrip("/")
     cwd: str | None = root
     carried = False
@@ -89,9 +110,16 @@ def dotdot_traces(calls: list[Call], clone: str) -> dict[str, int]:
         # The log shows a cd, not the folder the next call really starts in: in a live run
         # one cd was not kept, so a path that leaves the clone from there is only a guess.
         sure = bool(call.cwd) or not carried
-        for segment in SEPARATOR.split(call.text) if call.is_command else [call.text]:
+        text = call.text
+        if call.is_command:
+            text, bodies = split_text(text)
+            count = sum(has_dotdot(token) for body in bodies for token in TOKEN.findall(body))
+            if count:
+                found["in_text"] = found.get("in_text", 0) + count
+        for segment in SEPARATOR.split(text) if call.is_command else [text]:
             cd = CD.match(segment) if call.is_command else None
-            tokens = TOKEN.findall(cd[1]) if cd else TOKEN.findall(segment) if call.is_command else [segment]
+            goal = REDIRECT.sub("", cd[1]) if cd else ""
+            tokens = TOKEN.findall(goal) if cd else TOKEN.findall(segment) if call.is_command else [segment]
             for token in filter(has_dotdot, tokens):
                 token = PATH_PREFIX.sub("", token)
                 target = resolve(here, token)
@@ -102,8 +130,8 @@ def dotdot_traces(calls: list[Call], clone: str) -> dict[str, int]:
                     kind = "outside" if sure or absolute else "unresolved"
                     found[kind] = found.get(kind, 0) + 1
             if cd:
-                target = cd[1].rstrip(")'\" ")
-                here = resolve(here, target) if PLAIN_TARGET.match(cd[1]) else None
+                target = goal.rstrip(")'\" ")
+                here = resolve(here, target) if PLAIN_TARGET.match(goal) else None
                 sure = sure or re.match(r"^[a-z]:/|^/", normal(target)) is not None
                 carried = carried or call.carries_cd
             if call.is_command and LOST_FOLDER.match(segment):
@@ -224,20 +252,28 @@ def skill_line(results: pathlib.Path, seen: list[str] | None, called: list[str])
 
 
 def runtime_lines(case: pathlib.Path) -> list[str]:
-    """Starts of the journal that carry the environment keys, and how many of them lack its version."""
+    """Starts of the journal that carry the environment keys, and how many of them lack its version.
+
+    A session record holds the cost the environment showed or the user reported, not a step of
+    the agent: the version is not known there, so it is counted apart, not as missing.
+    """
     path = case / "state/actions.jsonl"
     if not path.exists():
         return ["runtime_version none"]
-    given = missing = 0
+    given = missing = session = 0
     for line in path.read_text(encoding="utf-8-sig", errors="replace").splitlines():
         try:
             entry = json.loads(line)
         except ValueError:
             continue
-        if isinstance(entry, dict) and isinstance(entry.get("runtime"), dict):
-            given += 1
-            missing += entry["runtime"].get("version") is None
-    return [f"runtime_version given={given} missing={missing}"]
+        if not isinstance(entry, dict) or not isinstance(entry.get("runtime"), dict):
+            continue
+        if entry.get("tool") == "session":
+            session += 1
+            continue
+        given += 1
+        missing += entry["runtime"].get("version") is None
+    return [f"runtime_version given={given} missing={missing} session={session}"]
 
 
 def timing_lines(results: pathlib.Path) -> list[str]:
@@ -290,8 +326,10 @@ def sent_by_agent(line):
     return ""
 
 
-def hidden_traces(results: pathlib.Path, clone: str) -> dict[str, int]:
+def hidden_traces(results: pathlib.Path, clone: str) -> tuple[dict[str, int], dict[str, int]]:
+    """Traces that stop the run from counting, and .. in the text the agent wrote, shown apart."""
     hidden: dict[str, int] = {}
+    in_text: dict[str, int] = {}
     for log in sorted(results.glob("*.jsonl")):
         calls: list[Call] = []
         started = {}
@@ -312,8 +350,9 @@ def hidden_traces(results: pathlib.Path, clone: str) -> dict[str, int]:
         for item in started.values():
             calls += tool_calls({"type": "item.completed", "item": item})
         for kind, count in dotdot_traces(calls, clone).items():
-            hidden[f".. {kind}"] = hidden.get(f".. {kind}", 0) + count
-    return hidden
+            into = in_text if kind == "in_text" else hidden
+            into[f".. {kind}"] = into.get(f".. {kind}", 0) + count
+    return hidden, in_text
 
 
 def read_logs(results: pathlib.Path, out: list[str]) -> None:
@@ -410,8 +449,9 @@ def main() -> int:
     out.extend(fault_lines(results, projects / args.case))
     canary = canary_seen(results, projects, os.environ.get("LIVE_RUN_NOTE", ""))
     out.append(f"canary_seen {canary}")
-    hidden = hidden_traces(results, str(pathlib.Path.cwd()))
+    hidden, in_text = hidden_traces(results, str(pathlib.Path.cwd()))
     out.append(f"traces_of_hidden_files {hidden}")
+    out.append(f"dotdot_in_written_text {in_text}")
     out.append(f"run_counts {not hidden and not canary and not (results / 'failures.txt').exists()}")
     memory = list((pathlib.Path.home() / ".claude/projects").glob(f"*{pathlib.Path.cwd().parent.name}*/memory/*"))
     out.append(f"auto_memory_files {len(memory)}")

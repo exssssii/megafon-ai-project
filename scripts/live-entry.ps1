@@ -199,7 +199,8 @@ $fixtureFile = Join-Path $Work 'make_pick_case.py'
 [IO.File]::WriteAllText($fixtureFile, $fixture, $utf8)
 $caseId = $Case
 $caseFolder = Join-Path $clone "projects\$caseId"
-$held = Join-Path $Work 'held'
+# Files the run hands over later wait outside the run folder: .. from the clone reaches that folder.
+$held = Join-Path ([IO.Path]::GetTempPath()) "live-held-$([guid]::NewGuid().ToString('N'))"
 # Values of the expectation files of the cases, except the refusal of the proposal: its
 # wording comes from B09, where the one of the case file recorded no choice.
 $facts = @{
@@ -675,7 +676,7 @@ function Run-Faults([switch] $Dry) {
 function Finish-Case([string] $Thread, [string] $Spent) {
     $choice = if ($Environment -eq 'codex') { 'Передумал: закрываем направление, вариант закрытия из твоего сравнения; если их несколько, то первый.' }
     else { 'Если нужен новый выбор направления, берём вариант развития из твоего сравнения, который укладывается в новое условие; если их несколько, то первый, а если ни один не укладывается, оставляем как есть.' }
-    $null = Say 'c3-2a' $Thread "Новое условие утверждаю, как оно записано в брифе. $choice Перепиши что нужно и снова дойди до согласования порогов."
+    $null = Say 'c3-2a' $Thread "Новое условие подтверждаю: $($facts.Changed) $choice Перепиши что нужно и снова дойди до согласования порогов."
     $shown = (& $python $usageFile $results) -join ' '
     $null = Say 'c3-3' $Thread "Пороги и обязательства подходят. $Spent $shown Заверши кейс."
     if (-not $script:halted -and -not $PlainChat) { Save-Handoff 'handoff-final' }
@@ -702,6 +703,7 @@ if ($DryRun -and $PlainChat) {
     Run-Report
     Set-Location -LiteralPath $repo
     Remove-Item -LiteralPath $helpers -Recurse -Force
+    if (Test-Path -LiteralPath $held) { Remove-Item -LiteralPath $held -Recurse -Force }
     Write-Host 'Dry run passed: no model was called.'
     exit 0
 }
@@ -726,6 +728,7 @@ if ($DryRun) {
     }
     Set-Location -LiteralPath $repo
     Remove-Item -LiteralPath $helpers -Recurse -Force
+    if (Test-Path -LiteralPath $held) { Remove-Item -LiteralPath $held -Recurse -Force }
     Write-Host 'Dry run passed: no model was called.'
     exit 0
 }
@@ -857,6 +860,7 @@ if (Test-Path -LiteralPath $archive) { Remove-Item -LiteralPath $archive -Force 
 Compress-Archive -Path (Join-Path $results '*') -DestinationPath $archive
 Set-Location -LiteralPath $repo
 Remove-Item -LiteralPath $helpers -Recurse -Force
+if (Test-Path -LiteralPath $held) { Remove-Item -LiteralPath $held -Recurse -Force }
 Write-Host ''
 Write-Host "Done. Send this file: $archive"
 if ($script:halted) { Write-Host 'This run stopped early and does not count, see failures.txt in the archive.' }
