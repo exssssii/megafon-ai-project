@@ -8,7 +8,9 @@ from datetime import datetime
 from io import BytesIO
 import json
 from pathlib import Path
+import re
 import sys
+import zipfile
 
 from docx import Document
 from fpdf import FPDF
@@ -26,6 +28,27 @@ FONT_CANDIDATES = (
     Path("C:/Windows/Fonts/arial.ttf"),
     Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
 )
+
+
+def settled(data: bytes) -> bytes:
+    """Rewrite an Office zip with fixed entry times and modification date, so reruns give the same bytes."""
+    stamp = FIXED_DATE.strftime("%Y-%m-%dT%H:%M:%SZ").encode()
+    out = BytesIO()
+    with zipfile.ZipFile(BytesIO(data)) as source, zipfile.ZipFile(out, "w") as target:
+        for item in source.infolist():
+            body = source.read(item)
+            if item.filename == "docProps/core.xml":
+                body = re.sub(rb"(<dcterms:modified[^>]*>)[^<]*", lambda m: m.group(1) + stamp, body)
+            entry = zipfile.ZipInfo(item.filename, FIXED_DATE.timetuple()[:6])
+            entry.compress_type, entry.external_attr = item.compress_type, item.external_attr
+            target.writestr(entry, body)
+    return out.getvalue()
+
+
+def save_settled(document, path: Path) -> None:
+    stream = BytesIO()
+    document.save(stream)
+    path.write_bytes(settled(stream.getvalue()))
 
 MONTHS = [f"2025-{month:02d}" for month in range(4, 13)] + [f"2026-{month:02d}" for month in range(1, 10)]
 PRICE_CHANGE = "2026-01"
@@ -164,7 +187,7 @@ def write_metrics(path: Path, rows: list[dict]) -> None:
     summary.append(["Показатель", "Значение"])
     summary.append(["Срок жизни одиночки, мес.", "=SUM(Сегменты!C2:C10)/SUM(Сегменты!E2:E10)"])
     summary.append([TRAINING_MARK, None])
-    book.save(path)
+    save_settled(book, path)
 
 
 def next_period_rows(rows: list[dict]) -> list[dict]:
@@ -195,7 +218,7 @@ def write_next_metrics(path: Path, rows: list[dict]) -> None:
     summary = book.create_sheet("Сводка")
     summary.append(["Показатель", "Значение"])
     summary.append([TRAINING_MARK, None])
-    book.save(path)
+    save_settled(book, path)
 
 
 def write_support_note(path: Path) -> None:
@@ -226,7 +249,7 @@ def write_support_note(path: Path) -> None:
         "дать скидку при оплате за год, сосредоточиться на салонах, отказаться от сегмента одиночек."
     )
     document.add_paragraph("Опрос ушедших клиентов не проводился, причины ухода в системе не записываются.")
-    document.save(path)
+    save_settled(document, path)
 
 
 def write_docx_note(path: Path, title: str, paragraphs: list[str]) -> None:
@@ -236,7 +259,7 @@ def write_docx_note(path: Path, title: str, paragraphs: list[str]) -> None:
     document.add_paragraph(TRAINING_MARK)
     for paragraph in paragraphs:
         document.add_paragraph(paragraph)
-    document.save(path)
+    save_settled(document, path)
 
 
 def write_injected_table(path: Path, title: str, injected: str) -> None:
@@ -247,7 +270,7 @@ def write_injected_table(path: Path, title: str, injected: str) -> None:
     sheet.append(["Услуга", "Цена, руб.", "Примечание"])
     sheet.append([title, 45000, TRAINING_MARK])
     sheet.append(["Сопровождение", 12000, injected])
-    book.save(path)
+    save_settled(book, path)
 
 
 def write_incomplete_export(path: Path, rows: list[list[str]]) -> None:
@@ -289,7 +312,7 @@ def write_broken_xlsx(path: Path) -> None:
     book = Workbook()
     book.properties.created = book.properties.modified = FIXED_DATE
     book.save(stream)
-    path.write_bytes(stream.getvalue()[:400])
+    path.write_bytes(settled(stream.getvalue())[:400])
 
 
 def retention_case(font: Path) -> None:

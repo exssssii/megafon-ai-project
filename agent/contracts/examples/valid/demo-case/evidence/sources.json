@@ -80,7 +80,7 @@
     },
     {
       "id": "SRC-0005",
-      "created_at": "2026-11-09T23:30:00+03:00",
+      "created_at": "2026-11-02T11:20:00+03:00",
       "record_status": "active",
       "type": "md",
       "title": "Беседа с персонажем: скептик",
@@ -89,7 +89,7 @@
       },
       "origin": "synthetic",
       "allowed": true,
-      "retrieved_at": "2026-11-09T23:30:00+03:00",
+      "retrieved_at": "2026-11-02T11:20:00+03:00",
       "sha256": "43569262d59e0e24c5ec1ae0663b1011987089c49bfc6724b7492cdb744def15",
       "extraction": {
         "status": "ok",

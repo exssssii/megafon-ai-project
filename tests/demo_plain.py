@@ -32,6 +32,12 @@ def strip_interviews(case: Path) -> None:
     lines = journal.read_text(encoding="utf-8").splitlines(keepends=True)
     journal.write_text("".join(line for line in lines if '"ACT-0013"' not in line and '"ACT-0014"' not in line),
                        encoding="utf-8")
+    checkpoint = case / "state" / "checkpoints" / "CKP-0002.json"
+    if checkpoint.exists():
+        document = json.loads(checkpoint.read_text(encoding="utf-8"))
+        document["completed_actions"] = [i for i in document["completed_actions"] if i not in ("ACT-0013", "ACT-0014")]
+        document["human_choices"] = [i for i in document["human_choices"] if i != "DEC-0006"]
+        checkpoint.write_text(json.dumps(document, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     commitments = case / "outputs" / "commitments.md"
     commitments.write_text(commitments.read_text(encoding="utf-8").replace(MARKED_LINE, ""), encoding="utf-8")
 

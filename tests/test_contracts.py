@@ -556,7 +556,8 @@ class RecordTimes(Mutating):
                 self.expect(["TIME_IN_FUTURE"])
 
     def test_clock_difference_of_two_machines_is_accepted(self):
-        recorded = vp.datetime.fromisoformat(read_json(self.case / DECISIONS)["records"][-1]["created_at"])
+        records = read_json(self.case / DECISIONS)["records"]
+        recorded = max(vp.datetime.fromisoformat(record["created_at"]) for record in records)
         with mock.patch.object(vp, "current_time", return_value=recorded - vp.timedelta(minutes=4)):
             self.assertNotIn("TIME_IN_FUTURE", codes(self.run_case())[0])
         with mock.patch.object(vp, "current_time", return_value=recorded - vp.timedelta(minutes=6)):

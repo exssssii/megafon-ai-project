@@ -40,7 +40,7 @@
       "change_reason": "Пользователь изменил ограничение по бюджету"
     },
     {
-      "id": "DEC-0006",
+      "id": "DEC-0007",
       "created_at": "2026-11-02T10:00:00+03:00",
       "topic": "direction",
       "status": "proposed",
@@ -88,6 +88,19 @@
         "user_statement": "Указать в сообщении, сколько книг можно взять за визит",
         "chosen_at": "2026-11-05T12:00:00+03:00",
         "action_id": "ACT-0011"
+      }
+    },
+    {
+      "id": "DEC-0006",
+      "created_at": "2026-11-02T11:00:00+03:00",
+      "topic": "interview_method",
+      "status": "chosen",
+      "proposal": null,
+      "choice": {
+        "option_id": null,
+        "user_statement": "Обе: сначала модельные собеседники, потом живые интервью по исправленному гайду",
+        "chosen_at": "2026-11-02T11:00:00+03:00",
+        "action_id": "ACT-0013"
       }
     }
   ]
