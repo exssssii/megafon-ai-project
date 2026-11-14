@@ -35,7 +35,8 @@ FORBIDDEN_NAMES = re.compile(r"(?i)^(?:\.env(?:\..*)?|settings\.local\.json|auth
 SECRETS = re.compile(rb"sk-ant-[A-Za-z0-9_-]{20,}|sk-(?:proj-)?[A-Za-z0-9]{32,}|gh[pousr]_[A-Za-z0-9]{30,}"
                      rb"|github_pat_[A-Za-z0-9_]{40,}|AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----")
 # An absolute path into a home folder names a person and a machine; variables and placeholders do not.
-PLACEHOLDER = rb"(?![$%<{])(?!(?:user|username|name|example|me|you|public|default)(?![\w.-]))"
+# An ellipsis in place of the name (C:/Users/...) is an example in a docstring, not a path.
+PLACEHOLDER = rb"(?![$%<{.])(?!(?:user|username|name|example|me|you|public|default)(?![\w.-]))"
 HOME_PATH = re.compile(rb"(?i)\b[A-Z]:[\\/]+Users[\\/]+" + PLACEHOLDER + rb"[^\\/\s\"'`]+"
                        rb"|/home/" + PLACEHOLDER + rb"[a-z_][\w.-]*|/Users/" + PLACEHOLDER + rb"[A-Za-z][\w.-]*")
 SAMPLE_CASE = "agent/contracts/examples/valid/demo-case"

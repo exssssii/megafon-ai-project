@@ -48,7 +48,8 @@ class PackageCheck(unittest.TestCase):
         found = self.check({"a.md": "key sk-ant-" + "a" * 30, "b.md": "token ghp_" + "b" * 36,
                             # Assembled here, or the package check finds this very file.
                             "c.md": "run C:\\" + "Users\\ivanov\\work", "d.md": "cd /" + "home/petr/x",
-                            "e.md": r"C:\Users\<name>\x, $env:USERPROFILE, /home/user/run.py, C:\Users\%USERNAME%"})
+                            "e.md": r"C:\Users\<name>\x, $env:USERPROFILE, /home/user/run.py, C:\Users\%USERNAME%",
+                            "f.py": '"""/c/Users/..., as C:/Users/...; other paths unchanged."""'})
         self.assertEqual(found, [("home_path", "c.md"), ("home_path", "d.md"), ("secret_like", "a.md"),
                                  ("secret_like", "b.md")])
 
