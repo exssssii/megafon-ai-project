@@ -12,6 +12,7 @@ import posixpath
 import re
 import subprocess
 import sys
+import zipfile
 from typing import NamedTuple
 
 SEPARATOR = re.compile(r"&&|\|\||;|\r?\n")
@@ -251,6 +252,79 @@ def skill_line(results: pathlib.Path, seen: list[str] | None, called: list[str])
     return f"skills seen={seen} other={other} called={shown}"
 
 
+def codex_subagents(codex_home: pathlib.Path | None) -> dict[str, int]:
+    """Threads that Codex started as subagents, by role, from the session files of the run.
+
+    codex exec --json does not log the spawn of a subagent, only a wait with no receiver (D46).
+    Each subagent writes its own session file whose first line names the parent thread and the role.
+    """
+    found: dict[str, int] = {}
+    if codex_home is None:
+        return found
+    for path in sorted(codex_home.glob("sessions/**/rollout-*.jsonl")):
+        try:
+            with path.open(encoding="utf-8-sig", errors="replace") as file:
+                meta = (json.loads(file.readline()) or {}).get("payload") or {}
+        except (OSError, ValueError, AttributeError):
+            continue
+        # A guardian_review thread also has a parent: it is the check of an approval, not a role.
+        if meta.get("thread_source") != "subagent":
+            continue
+        name = str(meta.get("agent_role") or str(meta.get("agent_path") or "").rsplit("/", 1)[-1] or "other")
+        role = next((r for r in ("reviewer", "respondent") if r in name), name)
+        found[role] = found.get(role, 0) + 1
+    return found
+
+
+def subagent_lines(results: pathlib.Path, case: pathlib.Path, codex_home: pathlib.Path | None = None) -> list[str]:
+    """Records that claim a separate agent (reviews, isolated talks) against the agents the run shows (D46).
+
+    Claude Code logs a call of its Agent tool. Codex logs only a wait, so its subagents are
+    read from the session files of the run. A record with no agent behind it is unproven.
+    """
+    calls: dict[str, int] = {}
+    codex: dict[str, int] = {}
+    for log in sorted(results.glob("*.jsonl")):
+        for line in log.read_text(encoding="utf-8-sig", errors="replace").splitlines():
+            try:
+                event = json.loads(line)
+            except ValueError:
+                continue
+            if not isinstance(event, dict):
+                continue
+            if event.get("type") == "assistant" and not event.get("parent_tool_use_id"):
+                for part in (event.get("message") or {}).get("content") or []:
+                    if isinstance(part, dict) and part.get("type") == "tool_use" and part.get("name") in ("Agent", "Task"):
+                        role = str((part.get("input") or {}).get("subagent_type") or "other")
+                        calls[role] = calls.get(role, 0) + 1
+            item = event.get("item")
+            if event.get("type") == "item.completed" and isinstance(item, dict) and item.get("type") == "collab_tool_call":
+                tool = str(item.get("tool"))
+                key = tool if tool != "wait" or item.get("receiver_thread_ids") else "wait_for_none"
+                codex[key] = codex.get(key, 0) + 1
+    # Records that came in the transfer archive were made by an earlier run, with its own agents.
+    received: set[str] = set()
+    try:
+        with zipfile.ZipFile(results / "handoff-received.zip") as archive:
+            received = {"/".join(pathlib.PurePosixPath(n.replace("\\", "/")).parts[1:]) for n in archive.namelist()}
+    except (OSError, zipfile.BadZipFile):
+        pass
+    reviews = len([p for p in (case / "state/reviews").glob("review-*.md") if f"state/reviews/{p.name}" not in received])
+    talks = [p for p in (case / "sources/interviews").glob("*.md")
+             if f"sources/interviews/{p.name}" not in received
+             and "Изоляция: да" in p.read_text(encoding="utf-8-sig", errors="replace")]
+    threads = codex_subagents(codex_home)
+    for role, count in threads.items():
+        calls[role] = calls.get(role, 0) + count
+    unproven: int | str = (max(0, reviews - calls.get("reviewer", 0)) + max(0, len(talks) - calls.get("respondent", 0)))
+    seen: dict[str, int] | str = threads
+    if codex and codex_home is None:
+        # Without the session files a Codex subagent cannot be seen: the 8bebdc7 runs, whose folders are gone.
+        seen = unproven = "unknown"
+    return [f"subagents calls={calls} codex_collab={codex} codex_threads={seen} reviews={reviews}"
+            f" isolated_talks={len(talks)} unproven={unproven}"]
+
+
 def runtime_lines(case: pathlib.Path) -> list[str]:
     """Starts of the journal that carry the environment keys, and how many of them lack its version.
 
@@ -427,6 +501,7 @@ def main() -> int:
     parser.add_argument("model")
     parser.add_argument("--marker", required=True)
     parser.add_argument("--case", required=True)
+    parser.add_argument("--codex-home", type=pathlib.Path, help="CODEX_HOME of the run: its session files show the subagents")
     parser.add_argument("--plain", action="store_true", help="plain chat of E06: no case folder and no tools to read it")
     args = parser.parse_args()
 
@@ -446,6 +521,7 @@ def main() -> int:
     out.append(f"marker_in_file_names {carried}")
     if not args.plain:
         out.extend(runtime_lines(projects / args.case))
+        out.extend(subagent_lines(results, projects / args.case, args.codex_home))
     out.extend(fault_lines(results, projects / args.case))
     canary = canary_seen(results, projects, os.environ.get("LIVE_RUN_NOTE", ""))
     out.append(f"canary_seen {canary}")

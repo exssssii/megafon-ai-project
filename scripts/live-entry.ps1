@@ -13,6 +13,8 @@
 # only its last two steps from the archive saved after step 10, and finish repeats the
 # re-choice and everything after it from the same archive. Both take any commit and do
 # not count for acceptance.
+# The short suites research (the first three replies of hard: the research, its numbers and the
+# first options) and resume (finish without the failures) check a fix in minutes; they do not count either.
 # -DryRun checks the clone, the stripping, the failures and the archives without any model.
 # Project skills (E14) are on and the skills built into the CLI are off, so a run sees exactly the
 # skills of .claude/skills or .agents/skills; -NoSkills turns the project skills off too, for the
@@ -25,7 +27,7 @@
 [CmdletBinding()]
 param(
     [ValidateSet('codex', 'claude')] [string] $Environment = 'codex',
-    [ValidateSet('entry', 'strategy', 'e2e', 'continue', 'hard', 'faults', 'finish', 'interviews')] [string] $Suite = 'entry',
+    [ValidateSet('entry', 'strategy', 'e2e', 'continue', 'hard', 'faults', 'finish', 'interviews', 'research', 'resume')] [string] $Suite = 'entry',
     [ValidateSet('retention-smb', 'direction-b2c')] [string] $Case = 'retention-smb',
     [string] $Codex = '',
     [string] $Model = '',
@@ -49,18 +51,18 @@ $repo = (Get-Location).Path
 if (-not (Test-Path -LiteralPath (Join-Path $repo 'START.md'))) { throw 'Run this from the repository root on the commit under test' }
 if (git status --porcelain) { throw 'The working tree has changes: commit or stash them first' }
 $commit = (git rev-parse HEAD).Trim()
-$fromFinal = $Suite -eq 'faults' -or $Suite -eq 'finish'
-$hardRun = $Suite -eq 'hard' -or $fromFinal
+$fromFinal = $Suite -eq 'faults' -or $Suite -eq 'finish' -or $Suite -eq 'resume'
+$hardRun = $Suite -eq 'hard' -or $Suite -eq 'research' -or $fromFinal
 $fullRun = $Suite -eq 'e2e' -or $Suite -eq 'continue' -or $Suite -eq 'interviews' -or $hardRun
 if (($Suite -eq 'continue' -or $fromFinal) -and -not $Handoff) { throw "The suite $Suite needs -Handoff with the transfer archive" }
-if ($Case -ne 'retention-smb' -and -not ($hardRun -or $Suite -eq 'continue')) { throw 'Only the suites hard, faults, finish and continue take -Case' }
+if ($Case -ne 'retention-smb' -and -not ($hardRun -or $Suite -eq 'continue')) { throw 'Only the suites hard, research, faults, finish, resume and continue take -Case' }
 if ($PlainChat -and $Suite -ne 'hard') { throw 'Only the suite hard takes -PlainChat' }
 # The archives of faults and finish would mix both variants, other suites would overwrite the run with the role.
 if ($NoReviewer -and $Suite -ne 'hard') { throw 'Only the suite hard takes -NoReviewer' }
 # The plain chat has no skills of its own, and an empty list must not read as a failed check.
 if ($PlainChat) { $NoSkills = $true; $NoReviewer = $true }
 if ($Handoff) { $Handoff = (Resolve-Path -LiteralPath $Handoff).Path }
-if (-not $Work) { $Work = Join-Path (Split-Path -Parent $repo) $(switch ($Suite) { 'entry' { 'b07-live' } 'strategy' { 'b08-live' } 'e2e' { "b09-live-$Environment" } 'continue' { "b09-continue-$Environment-$Case" } 'hard' { if ($PlainChat) { "e06-chat-$Environment-$Case" } elseif ($NoReviewer) { "b11-live-$Environment-$Case-noreviewer" } else { "b11-live-$Environment-$Case" } } 'faults' { "b11-faults-$Environment-$Case" } 'finish' { "b11-finish-$Environment-$Case" } 'interviews' { "e03-interviews-$Environment" } }) }
+if (-not $Work) { $Work = Join-Path (Split-Path -Parent $repo) $(switch ($Suite) { 'entry' { 'b07-live' } 'strategy' { 'b08-live' } 'e2e' { "b09-live-$Environment" } 'continue' { "b09-continue-$Environment-$Case" } 'hard' { if ($PlainChat) { "e06-chat-$Environment-$Case" } elseif ($NoReviewer) { "b11-live-$Environment-$Case-noreviewer" } else { "b11-live-$Environment-$Case" } } 'faults' { "b11-faults-$Environment-$Case" } 'finish' { "b11-finish-$Environment-$Case" } 'research' { "fix-research-$Environment-$Case" } 'resume' { "fix-resume-$Environment-$Case" } 'interviews' { "e03-interviews-$Environment" } }) }
 $Work = [IO.Path]::GetFullPath($Work)
 # A path like C:folder is relative to the current folder, and a clone inside the
 # repository makes its working tree dirty for every later run.
@@ -684,7 +686,9 @@ function Finish-Case([string] $Thread, [string] $Spent) {
 
 function Run-Report {
     $plainFlag = @(if ($PlainChat) { '--plain' })
-    & $python $reporterFile $results $commit "$version" $Model --marker $facts.Marker --case $caseId @plainFlag
+    # The session files of Codex show its subagents: codex exec --json logs only a wait (D46).
+    $homeFlag = @(if ($Environment -eq 'codex') { '--codex-home', $loginHome })
+    & $python $reporterFile $results $commit "$version" $Model --marker $facts.Marker --case $caseId @plainFlag @homeFlag
     if ($LASTEXITCODE -ne 0) { throw 'Report failed' }
 }
 
@@ -712,7 +716,7 @@ if ($DryRun) {
     # The sample case keeps its own name: the validator ties it to the folder.
     $caseId = 'demo-case'
     $caseFolder = Join-Path $clone "projects\$caseId"
-    if ($Suite -eq 'e2e' -or $Suite -eq 'hard') {
+    if ($Suite -eq 'e2e' -or $Suite -eq 'hard' -or $Suite -eq 'research') {
         Copy-Item -LiteralPath (Join-Path $clone 'agent\contracts\examples\valid\demo-case') -Destination $caseFolder -Recurse
         Save-Handoff $(if ($Suite -eq 'hard') { 'handoff-final' } else { 'handoff' })
     }
@@ -757,7 +761,7 @@ if ($Suite -eq 'e2e') {
     }
     $shown = (& $python $usageFile $results) -join ' '
     $null = Say 'c3-3' $t "Пороги и обязательства подходят. На кейс у меня ушло около 20 минут. $shown Заверши кейс."
-} elseif ($Suite -eq 'hard') {
+} elseif ($Suite -eq 'hard' -or $Suite -eq 'research') {
     $request = [IO.File]::ReadAllText((Join-Path $clone "inbox\$caseId\request.md"), $utf8).Replace('`materials/', "``inbox/$caseId/materials/")
     $t = Say 'c1-1' '' "$request`n`nНазови кейс $caseId."
 
@@ -770,31 +774,34 @@ if ($Suite -eq 'e2e') {
     $null = Say 'c1-2' $t "Бриф утверждаю. Если что-то неясно, прими разумное допущение и назови его. Вот ещё файлы, учти их как материалы: $given. И отчёт по адресу https://report.example.invalid/. Исследуй и дойди до вариантов и рекомендации, затем жди моего выбора."
     $given = Hand-Over $facts.Conflict
     $null = Say 'c1-3' $t "Вот ещё файлы: $given. Учти их и обнови анализ и варианты, если что-то меняется."
-    $null = Say 'c1-4' $t $facts.Impossible
-    if ($Environment -eq 'claude') { $null = Say 'c1-5a' $t 'Пока не выбираю. Напиши предварительные стратегии.' }
-    $null = Say 'c1-5' $t 'Мне не нравится этот вариант. Берём вариант развития из твоего сравнения, не тот, что ты рекомендовал; если их несколько, то первый, а если другого нет, добавь его в сравнение и бери. Стратегии пока не пиши.'
-    # The plain chat keeps no record of the choice and no case folder to transfer.
-    if (-not $PlainChat) { Check-Choice }
-    $null = Say 'c1-6' $t 'Пока остановимся, продолжим позже.'
-    if (-not $script:halted -and -not $PlainChat) { Save-Handoff }
+    # The suite research stops after the first options: enough for the numbers and the method question.
+    if ($Suite -ne 'research') {
+        $null = Say 'c1-4' $t $facts.Impossible
+        if ($Environment -eq 'claude') { $null = Say 'c1-5a' $t 'Пока не выбираю. Напиши предварительные стратегии.' }
+        $null = Say 'c1-5' $t 'Мне не нравится этот вариант. Берём вариант развития из твоего сравнения, не тот, что ты рекомендовал; если их несколько, то первый, а если другого нет, добавь его в сравнение и бери. Стратегии пока не пиши.'
+        # The plain chat keeps no record of the choice and no case folder to transfer.
+        if (-not $PlainChat) { Check-Choice }
+        $null = Say 'c1-6' $t 'Пока остановимся, продолжим позже.'
+        if (-not $script:halted -and -not $PlainChat) { Save-Handoff }
 
-    $strategyFile = if ($PlainChat) { '' } else { Join-Path $caseFolder 'outputs\product-strategy.md' }
-    $null = Say-Until 'c2' "Продолжи кейс $($facts.Name) и пиши стратегии." $strategyFile
-    if ($PlainChat) { if (-not $script:halted) { Save-Written 'after-break' } } else { Snapshot-Break }
+        $strategyFile = if ($PlainChat) { '' } else { Join-Path $caseFolder 'outputs\product-strategy.md' }
+        $null = Say-Until 'c2' "Продолжи кейс $($facts.Name) и пиши стратегии." $strategyFile
+        if ($PlainChat) { if (-not $script:halted) { Save-Written 'after-break' } } else { Snapshot-Break }
 
-    $t = Say 'c3-1' '' "Продолжи кейс $($facts.Name) и дойди до согласования порогов."
-    $null = Say 'c3-2' $t "$($facts.Changed) Обнови что нужно и снова дойди до согласования порогов."
-    Finish-Case $t 'На кейс у меня ушло около 20 минут.'
-    # The failures of a tool and of a save test the agent itself: the plain chat has neither.
-    if ($PlainChat) { Save-Written 'written' } else { Run-Faults }
+        $t = Say 'c3-1' '' "Продолжи кейс $($facts.Name) и дойди до согласования порогов."
+        $null = Say 'c3-2' $t "$($facts.Changed) Обнови что нужно и снова дойди до согласования порогов."
+        Finish-Case $t 'На кейс у меня ушло около 20 минут.'
+        # The failures of a tool and of a save test the agent itself: the plain chat has neither.
+        if ($PlainChat) { Save-Written 'written' } else { Run-Faults }
+    }
 } elseif ($Suite -eq 'faults') {
     Load-Handoff
     Run-Faults
-} elseif ($Suite -eq 'finish') {
+} elseif ($Suite -eq 'finish' -or $Suite -eq 'resume') {
     Load-Handoff
     $t = Say 'c3-1' '' "Продолжи кейс $($facts.Name)."
     Finish-Case $t 'С прошлой записи учёта у меня ушло ещё около 5 минут.'
-    Run-Faults
+    if ($Suite -eq 'finish') { Run-Faults }
 } elseif ($Suite -eq 'interviews') {
     # --- TO AGREE WITH THE USER BEFORE THE RUN (E03) -------------------------------------
     # The text of the reply that creates a gap about people (a question of the research on

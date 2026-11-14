@@ -327,6 +327,68 @@ class RunHygiene(unittest.TestCase):
                 "\n".join(x if isinstance(x, str) else json.dumps(x) for x in lines), encoding="utf-8")
             self.assertEqual(report.runtime_lines(case), ["runtime_version given=2 missing=1 session=0"])
 
+    def test_records_of_a_separate_agent_are_matched_to_its_calls(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            results, case = Path(tmp) / "results", Path(tmp) / "case"
+            (case / "state/reviews").mkdir(parents=True)
+            (case / "sources/interviews").mkdir(parents=True)
+            (case / "state/reviews/review-0001.md").write_text("x", encoding="utf-8")
+            (case / "sources/interviews/synthetic-a-1.md").write_text("Изоляция: да\n", encoding="utf-8")
+            (case / "sources/interviews/synthetic-b-1.md").write_text("Изоляция: нет\n", encoding="utf-8")
+            results.mkdir()
+            agent = {"type": "tool_use", "name": "Agent", "input": {"subagent_type": "reviewer"}}
+            inner = {"type": "assistant", "parent_tool_use_id": "t1", "message": {"content": [agent]}}
+            wait = {"type": "collab_tool_call", "tool": "wait", "receiver_thread_ids": []}
+            lines = [{"type": "assistant", "message": {"content": [agent]}}, inner,
+                     {"type": "item.completed", "item": wait}]
+            (results / "c3-1.jsonl").write_text("\n".join(map(json.dumps, lines)), encoding="utf-8")
+            # A wait of Codex with no session files cannot tell whether an agent ran.
+            self.assertEqual(report.subagent_lines(results, case), [
+                "subagents calls={'reviewer': 1} codex_collab={'wait_for_none': 1} codex_threads=unknown reviews=1"
+                " isolated_talks=1 unproven=unknown"])
+            (results / "c3-1.jsonl").write_text(json.dumps(lines[0]), encoding="utf-8")
+            self.assertEqual(report.subagent_lines(results, case), [
+                "subagents calls={'reviewer': 1} codex_collab={} codex_threads={} reviews=1 isolated_talks=1 unproven=1"])
+
+    def test_records_from_the_transfer_archive_are_not_this_run_s(self):
+        # From the resume run: the three reviews of the earlier run came in the archive.
+        import zipfile
+        with tempfile.TemporaryDirectory() as tmp:
+            results, case = Path(tmp) / "results", Path(tmp) / "case"
+            results.mkdir()
+            (case / "state/reviews").mkdir(parents=True)
+            for name in ("review-0001.md", "review-0002.md"):
+                (case / "state/reviews" / name).write_text("x", encoding="utf-8")
+            with zipfile.ZipFile(results / "handoff-received.zip", "w") as archive:
+                archive.writestr("case\\state\\reviews\\review-0001.md", "x")
+            self.assertEqual(report.subagent_lines(results, case, Path(tmp) / "none"), [
+                "subagents calls={} codex_collab={} codex_threads={} reviews=1 isolated_talks=0 unproven=1"])
+
+    def test_codex_subagents_are_read_from_the_session_files(self):
+        # From the canary of D46: exec logs only a wait, the subagent writes its own session file.
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp) / "codex-home"
+            day = home / "sessions/2026/11/14"
+            day.mkdir(parents=True)
+            metas = {"a": {"id": "p", "thread_source": "user"},
+                     "g": {"id": "g1", "parent_thread_id": "p", "thread_source": "guardian_review"},
+                     "b": {"id": "c1", "parent_thread_id": "p", "thread_source": "subagent", "agent_role": "reviewer"},
+                     "c": {"id": "c2", "parent_thread_id": "p", "thread_source": "subagent",
+                           "agent_path": "/root/respondent_1"}}
+            for name, meta in metas.items():
+                (day / f"rollout-{name}.jsonl").write_text(
+                    json.dumps({"type": "session_meta", "payload": meta}) + "\n{}\n", encoding="utf-8")
+            self.assertEqual(report.codex_subagents(home), {"reviewer": 1, "respondent": 1})
+            results, case = Path(tmp) / "results", Path(tmp) / "case"
+            results.mkdir()
+            (case / "state/reviews").mkdir(parents=True)
+            (case / "state/reviews/review-0001.md").write_text("x", encoding="utf-8")
+            wait = {"type": "item.completed", "item": {"type": "collab_tool_call", "tool": "wait", "receiver_thread_ids": []}}
+            (results / "c3-1.jsonl").write_text(json.dumps(wait), encoding="utf-8")
+            self.assertEqual(report.subagent_lines(results, case, home), [
+                "subagents calls={'reviewer': 1, 'respondent': 1} codex_collab={'wait_for_none': 1}"
+                " codex_threads={'reviewer': 1, 'respondent': 1} reviews=1 isolated_talks=0 unproven=0"])
+
     def test_a_session_record_of_the_cost_is_no_missing_version(self):
         # From the final run: the record of the cost the user reported carries no version of the environment.
         with tempfile.TemporaryDirectory() as tmp:
