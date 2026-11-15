@@ -369,27 +369,41 @@ Note-Check "reviewer $(if ($NoReviewer) { 'off' } else { 'on' })"
 $skillSettings = Join-Path $Work 'claude-skills.json'
 [IO.File]::WriteAllText($skillSettings, '{"disableBundledSkills":true,"skillOverrides":{"design":"off","doctor":"off","plugin-authoring":"off"}}', $utf8)
 $projectSkills = @(Get-ChildItem -LiteralPath (Join-Path $clone '.agents/skills') -Directory -ErrorAction SilentlyContinue | ForEach-Object Name)
-$codexSkillFlags = @('--disable', 'plugins', '--disable', 'remote_plugin', '--disable', 'skill_search', '--disable', 'apps',
+$codexBaseFlags = @('--disable', 'plugins', '--disable', 'remote_plugin', '--disable', 'skill_search', '--disable', 'apps',
     '-c', 'skills.bundled.enabled=false')
-if ($NoSkills -and $projectSkills) {
+function Skill-Flags([string[]] $Off) {
+    if (-not $Off) { return $codexBaseFlags }
     # TOML literal strings: double quotes inside an argument break in Windows PowerShell 5.1.
-    $codexSkillFlags += @('-c', ('skills.config=[' + (($projectSkills | ForEach-Object { "{name='$_',enabled=false}" }) -join ',') + ']'))
+    return $codexBaseFlags + @('-c', ('skills.config=[' + (($Off | ForEach-Object { "{name='$_',enabled=false}" }) -join ',') + ']'))
 }
+# What the model would get, rendered without a model. The prompt comes as JSON, so its line breaks are the two characters \n.
+function Seen-Skills([string[]] $Flags) {
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    $prompt = (& $Codex debug prompt-input @Flags 'ok' 2>$null) -join "`n"
+    $code = $LASTEXITCODE
+    $ErrorActionPreference = $previous
+    return [pscustomobject]@{ Ok = ($code -eq 0 -and $prompt); Names = @([regex]::Matches($prompt, '\\n- ([a-z0-9-]+): ') | ForEach-Object { $_.Groups[1].Value }) }
+}
+$offSkills = @(if ($NoSkills) { $projectSkills })
+$personalOff = @()
 $seen = 'dry run'
 if ($Environment -eq 'claude') { $seen = 'see the start event' }
 elseif (-not $DryRun) {
-    # What the model would get, rendered without a model: proof on this machine that no personal skill is in.
-    $previous = $ErrorActionPreference
-    $ErrorActionPreference = 'Continue'
-    $prompt = (& $Codex debug prompt-input @codexSkillFlags 'ok' 2>$null) -join "`n"
-    $probeCode = $LASTEXITCODE
-    $ErrorActionPreference = $previous
-    # The prompt comes as JSON, so its line breaks are the two characters \n.
-    $seen = (([regex]::Matches($prompt, '\\n- ([a-z0-9-]+): ') | ForEach-Object { $_.Groups[1].Value }) -join ',')
+    # Codex reads the skills of the user's home folder whatever CODEX_HOME is. They stay on for the user;
+    # only this run turns off each skill that is not the project's, by its name.
+    $first = Seen-Skills (Skill-Flags $offSkills)
+    $personalOff = @($first.Names | Where-Object { $_ -notin $projectSkills })
+    $offSkills += $personalOff
+    # The second render is the proof on this machine that no personal skill is left.
+    $probe = Seen-Skills (Skill-Flags $offSkills)
+    $seen = $probe.Names -join ','
     # A failed render and an empty list with skills on both leave isolation unchecked, not clean.
-    if ($probeCode -ne 0 -or -not $prompt -or (-not $seen -and -not $NoSkills)) { $seen = 'error' }
+    if (-not $first.Ok -or -not $probe.Ok -or (-not $seen -and -not $NoSkills)) { $seen = 'error' }
 }
+$codexSkillFlags = Skill-Flags $offSkills
 Note-Check "skills $(if ($NoSkills) { 'off' } else { 'on' }) project=$($projectSkills -join ',') seen=$seen"
+if ($Environment -eq 'codex') { Note-Check "personal_skills_off $($personalOff -join ',')" }
 if ($PlainChat) { Note-Check "plain_chat kept=$((Get-ChildItem -LiteralPath $clone -Force | ForEach-Object Name) -join ',')" }
 
 # Start and end of each reply, in UTC, measured here the same way for the agent and the plain chat.

@@ -71,8 +71,11 @@ def checkout(font: Path, brand: str, color: tuple[int, int, int], step: tuple[st
     draw.text((120, 220), step[1], fill=INK, font=load_font(font, 30))
     draw.rectangle((120, 280, 760, 340), outline=LINE, width=3)
     draw.text((120, 400), price, fill=MUTED if price_size < 20 else INK, font=load_font(font, price_size))
-    draw.rounded_rectangle((120, button_y, 480, button_y + 64), radius=10, fill=color)
-    draw.text((150, button_y + 14), step[2], fill=PAPER, font=load_font(font, 30))
+    # The button grows with its text: answers.md lists the whole label as visible.
+    label = load_font(font, 30)
+    right = max(480, 150 + int(draw.textlength(step[2], font=label)) + 30)
+    draw.rounded_rectangle((120, button_y, right, button_y + 64), radius=10, fill=color)
+    draw.text((150, button_y + 14), step[2], fill=PAPER, font=label)
     return image
 
 
@@ -144,7 +147,7 @@ def screens() -> list[Screen]:
         Screen("tiny-text.png", "целевой", "Страница условий возврата с мелкой строкой и обрезанным краем.",
                ("Свой продукт", TINY_HEADING, TINY_BODY),
                (f"Строка мелким шрифтом под основным текстом («{TINY_FINE_PRINT}») на снимке не читается.",
-                "Правая нижняя строка обрезана краем снимка: виден только её левый край.")),
+                "Правая нижняя строка обрезана краем снимка: виден только её левый край, «Подроб».")),
         Screen("cookie-wall.png", "заслонён", "Окно cookie закрывает почти весь экран оформления.",
                (COOKIE_TEXT, *COOKIE_BUTTONS),
                ("Всё, что за окном, затемнено: основное содержимое экрана не видно, за краем окна едва различимы",

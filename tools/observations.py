@@ -13,7 +13,10 @@ NO_TEXT_VALUES = ("нет", "неразборчиво")
 LINE_NAMES = ("Где", "Видно", "Текст")
 HEADING = re.compile(r"##[ \t]+(.+?)[ \t]*$")
 ITEM_HEADING = re.compile(r"Наблюдение[ \t]+(\d+)")
-QUOTED_LIST = re.compile(r"(?:«[^«»]*\S[^«»]*»(?:[\s,;]+|$))+")
+# A quote may hold one level of quotes inside, as a Russian screen writes a name: «Тариф «Салон»».
+INNER = r"«(?!\s*»)[^«»]+»"
+QUOTE = rf"«(?!\s*»)(?:[^«»]|{INNER})+»"
+QUOTED_LIST = re.compile(rf"(?:{QUOTE}(?:[\s,;]+|$))+")
 SCREEN_LINE = re.compile(r"([^\s:—–-]+)[ \t]*[:—–-]*[ \t]*(.*)")
 
 

@@ -102,6 +102,17 @@ class Parsing(unittest.TestCase):
             with self.subTest(value):
                 self.assertEqual(observations.parse(with_text(value)).items[0].text, expected)
 
+    def test_a_name_in_quotes_inside_a_quote_is_kept_word_for_word(self):
+        def with_text(value):
+            return VALID.replace("Текст: «Шаг 1 из 4»", f"Текст: {value}")
+
+        for value in ("«Тариф «Салон»»", "«Тариф «Салон»», «Дальше»", "«Пакет «Бизнес» на год»"):
+            with self.subTest(value):
+                self.assertEqual(observations.parse(with_text(value)).items[0].text, value)
+        for value in ("«Тариф «Салон»", "«Тариф «Салон» «Про»", "«Тариф «Сал«он»»»", "««»»"):
+            with self.subTest(value), self.assertRaises(observations.FormatError):
+                observations.parse(with_text(value))
+
     def test_label_other_than_target_may_have_no_items(self):
         for label in observations.SCREEN_LABELS[1:]:
             with self.subTest(label):
