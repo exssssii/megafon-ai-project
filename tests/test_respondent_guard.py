@@ -1,15 +1,16 @@
 import json
 import os
 from pathlib import Path
-import shutil
 import subprocess
 import sys
 import unittest
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
+sys.path.insert(0, str(ROOT / "tests"))
 
 import respondent_guard as guard  # noqa: E402
+from git_bash import git_bash  # noqa: E402
 
 WRAPPER = ROOT / ".claude" / "agents" / "respondent.md"
 
@@ -77,14 +78,14 @@ class Wrapper(unittest.TestCase):
         self.assertIn('matcher: "*"', header)
         self.assertIn("tools/respondent_guard.py", header)
 
-    @unittest.skipUnless(shutil.which("bash"), "bash is not available")
+    @unittest.skipUnless(git_bash(), "Git Bash is not available")
     def test_hook_command_denies_without_a_venv(self):
         command = next(line.split("command: ", 1)[1] for line in WRAPPER.read_text(encoding="utf-8").splitlines()
                        if "command: " in line)
         command = json.loads(command)  # the YAML scalar is a double-quoted string with JSON-compatible escapes
         empty = ROOT / "tests" / "fixtures"
         # The full path: on Windows a bare "bash" resolves to the WSL launcher in System32.
-        result = subprocess.run([shutil.which("bash"), "-c", command], input=json.dumps(read(guard.ROLE)).encode("utf-8"),
+        result = subprocess.run([git_bash(), "-c", command], input=json.dumps(read(guard.ROLE)).encode("utf-8"),
                                 capture_output=True, timeout=30, env={**os.environ, "CLAUDE_PROJECT_DIR": str(empty)})
         self.assertEqual(result.returncode, 2)
 

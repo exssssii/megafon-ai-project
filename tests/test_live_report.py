@@ -43,6 +43,13 @@ class DotDotTraces(unittest.TestCase):
     def test_backslashes_count_too(self):
         self.assertEqual(self.traces(shell(r"cd ..\..\results")), {"outside": 1})
 
+    def test_powershell_range_is_no_path(self):
+        command = "$t = Get-Content x; $t[($start-1)..($end-2)]; $t[0..3]; $t[$a..$b]"
+        self.assertEqual(self.traces(codex(command)), {})
+
+    def test_bare_parent_folder_still_counts_next_to_a_range(self):
+        self.assertEqual(self.traces(codex("$t[($a)..($b)]; Get-Content ..")), {"outside": 1})
+
     def test_cd_to_a_variable_leaves_it_unresolved(self):
         self.assertEqual(self.traces(shell('cd "$CASE" && cat ../notes.md')), {"unresolved": 1})
 

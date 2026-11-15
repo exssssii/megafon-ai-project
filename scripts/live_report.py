@@ -23,6 +23,8 @@ LOST_FOLDER = re.compile(r"^\s*(?:\(\s*cd\b|\)|popd\b|Pop-Location\b|cd\s*$|cd\s
 PLAIN_TARGET = re.compile(r"""^(?:"[^"]*"|'[^']*'|\S+)[)'"]*$""")
 PATH_PREFIX = re.compile(r"^[^\/]*[:@{\[=](?=\.\.)")
 DOTDOT = re.compile(r"(?:^|[\\/:@{\[=])\.\.(?:$|[\\/])")
+# The range operator of PowerShell next to a bracket, as in $t[($a)..($b)]: not a path.
+RANGE = re.compile(r"(?<=[)\]])\.\.|\.\.(?=\()")
 # A redirect of the output does not change where cd goes.
 REDIRECT = re.compile(r"(?:\s+(?:\d?>>?|&>)\s*\S+)+\s*$")
 # The body of a heredoc or of a PowerShell here-string is text the command writes or runs,
@@ -113,7 +115,7 @@ def dotdot_traces(calls: list[Call], clone: str) -> dict[str, int]:
         sure = bool(call.cwd) or not carried
         text = call.text
         if call.is_command:
-            text, bodies = split_text(text)
+            text, bodies = split_text(RANGE.sub(" ", text))
             count = sum(has_dotdot(token) for body in bodies for token in TOKEN.findall(body))
             if count:
                 found["in_text"] = found.get("in_text", 0) + count
