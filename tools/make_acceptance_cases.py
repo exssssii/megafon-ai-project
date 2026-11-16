@@ -75,11 +75,12 @@ SEGMENTS = {
         "tariff_before": 4900, "tariff_after": 4900, "variable_cost": 1100,
     },
 }
-NEXT_MONTHS = ["2026-10", "2026-11", "2026-12"]
+# Only a month already over by the date of the case and of the live runs: a later one reads as a forecast.
+NEXT_MONTHS = ["2026-10"]
 NEXT_PERIOD = {
-    SOLO: {"new": [52, 54, 56], "churn": [40, 41, 39]},
-    SMALL: {"new": [14, 15, 16], "churn": [10, 11, 10]},
-    LARGE: {"new": [2, 3, 2], "churn": [1, 1, 1]},
+    SOLO: {"new": [52], "churn": [40]},
+    SMALL: {"new": [14], "churn": [10]},
+    LARGE: {"new": [2], "churn": [1]},
 }
 HIDDEN_CHURN = (SOLO, "2026-02")
 HIDDEN_START = (SOLO, "2026-03")
@@ -324,7 +325,7 @@ def retention_case(font: Path) -> None:
     write_metrics(materials / "metrics.xlsx", rows)
     write_support_note(materials / "support-note.docx")
     next_rows = next_period_rows(rows)
-    write_next_metrics(extra / "metrics-2026-q4.xlsx", next_rows)
+    write_next_metrics(extra / "metrics-2026-10.xlsx", next_rows)
 
     quarter = ["2026-07", "2026-08", "2026-09"]
     quarter_rows = [row for row in rows if row["month"] in quarter]
@@ -409,16 +410,16 @@ def retention_case(font: Path) -> None:
     ))
     next_numbers = [
         number(
-            f"churn_{slug}_next_period", f"Месячный отток, {name}, октябрь–декабрь 2026", churn_rate(next_rows, name, NEXT_MONTHS),
-            "%", "2026-10…2026-12", "сумма ушедших / сумма активных на начало",
-            span(next_rows, name, NEXT_MONTHS).replace("metrics.xlsx", "metrics-2026-q4.xlsx"), 0.05,
+            f"churn_{slug}_next_period", f"Месячный отток, {name}, октябрь 2026", churn_rate(next_rows, name, NEXT_MONTHS),
+            "%", "2026-10", "ушедшие / активные на начало месяца",
+            span(next_rows, name, NEXT_MONTHS).replace("metrics.xlsx", "metrics-2026-10.xlsx"), 0.05,
         )
         for name, slug in ((SOLO, "solo"), (SMALL, "small"))
     ]
     write_control("retention-smb", {
         "numbers": numbers,
         "revision": {
-            "material": "extra/metrics-2026-q4.xlsx",
+            "material": "extra/metrics-2026-10.xlsx",
             "numbers": next_numbers,
             "contested": [
                 "Высокий отток одиночек после смены тарифа устойчив (около 6,3 % в месяц). Новые месяцы показывают возврат к уровню до смены тарифа",

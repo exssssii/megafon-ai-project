@@ -232,7 +232,7 @@ class Retention(unittest.TestCase):
 
 
 class Revision(unittest.TestCase):
-    path = EXAMPLES / "retention-smb" / "extra" / "metrics-2026-q4.xlsx"
+    path = EXAMPLES / "retention-smb" / "extra" / "metrics-2026-10.xlsx"
 
     @classmethod
     def setUpClass(cls):
@@ -307,7 +307,7 @@ class Revision(unittest.TestCase):
     def test_card_has_the_revision_section(self):
         text = (ACCEPTANCE / "retention-smb.md").read_text(encoding="utf-8")
         self.assertIn("## Пересмотр: новые данные", text)
-        self.assertIn("metrics-2026-q4.xlsx", text)
+        self.assertIn("metrics-2026-10.xlsx", text)
 
 
 class Direction(unittest.TestCase):

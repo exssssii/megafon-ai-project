@@ -106,6 +106,9 @@ def parse_revisions(text: str) -> tuple[list[dict], list[dict]]:
                     problems.append(problem("REVISION_FORMAT", number, f"«{label}» is repeated"))
                 else:
                     bullets[label] = (number, found.group(2))
+            else:
+                # A continuation written under the seven lines would carry a choice no check reads.
+                problems.append(problem("REVISION_FORMAT", number, "an entry holds only its seven lines «- <label>: …»"))
     if not title_seen:
         problems.append(problem("REVISION_FORMAT", 1, f"the first line must be «{TITLE}»"))
     for entry, bullets in blocks:

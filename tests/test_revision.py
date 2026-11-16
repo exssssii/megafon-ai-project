@@ -111,6 +111,19 @@ class ParseRevisions(unittest.TestCase):
         _, problems = revision.parse_revisions(TWO_ENTRIES.replace(".history/1/", ".history/7/"))
         self.assertEqual(codes(problems), ["REVISION_FORMAT"])
 
+    def test_free_text_inside_an_entry_is_reported(self):
+        # A continuation appended under the seven lines hides a second choice from the checks.
+        tail = "\n### Продолжение после выбора направления\nДополнение — Выбор: [DEC-0013]\n"
+        text = TWO_ENTRIES.replace("- Прежние версии: outputs/.history/1/\n", "- Прежние версии: outputs/.history/1/\n" + tail)
+        _, problems = revision.parse_revisions(text)
+        self.assertEqual(codes(problems), ["REVISION_FORMAT", "REVISION_FORMAT"])
+        self.assertEqual([p["line"] for p in problems], [13, 14])
+
+    def test_unknown_bullet_is_reported(self):
+        text = TWO_ENTRIES.replace("- Выбор: изменений нет\n", "- Выбор: изменений нет\n- Примечание: прочитано\n")
+        _, problems = revision.parse_revisions(text)
+        self.assertEqual(codes(problems), ["REVISION_FORMAT"])
+
     def test_gap_in_numbers(self):
         _, problems = revision.parse_revisions(TWO_ENTRIES.replace("Пересмотр 2 —", "Пересмотр 3 —"))
         self.assertEqual(codes(problems), ["REVISION_NUMBER"])
