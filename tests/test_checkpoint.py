@@ -1329,6 +1329,16 @@ class ArtifactFolders(DemoCaseTestCase):
                          (0, [{"path": "research/interviews/personas.md", "state": "changed"}]))
         self.assertEqual(personas.read_bytes(), original)
 
+    def test_team_roster_is_pinned_only_when_it_exists(self):
+        self.assertNotIn("team.md", ck.collect_artifacts(self.case))
+        (self.case / "team.md").write_text(
+            "# Команда\n\nИсточник: слова пользователя, действие ACT-0004\n\n"
+            "Состав не назван: ответственные записаны ролями.\n", encoding="utf-8")
+        self.assertIn("team.md", ck.collect_artifacts(self.case))
+        self.assertEqual(self.save()[0], 0)
+        paths = [a["path"] for a in self.checkpoint(run("resume", self.case)[1]["id"])["artifacts"]]
+        self.assertIn("team.md", paths)
+
     def test_stale_temporaries_are_removed_from_artifact_folders(self):
         stale = [self.case / ".tmp-1-brief.md", self.case / "outputs" / ".tmp-1-x.md",
                  self.case / "evidence" / ".tmp-1-claims.json"]

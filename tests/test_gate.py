@@ -300,6 +300,95 @@ class Base(unittest.TestCase):
         self.assertIn(code, self.codes(stage, *flags))
 
 
+TEAM_HEAD = "# Команда\n\nИсточник: слова пользователя, действие ACT-0004\n\n"
+ROSTER = "| Имя | Роль |\n|---|---|\n| Анна К. | аналитик |\n| Игорь С. | разработка |\n"
+
+
+class Team(Base):
+    def team(self, text):
+        self.write("team.md", text)
+
+    def owner(self, name):
+        text = (self.case / "outputs/commitments.md").read_text(encoding="utf-8")
+        row = next(line for line in text.splitlines() if line.startswith("| Сохранить сервис |"))
+        cells = row.split("|")
+        cells[2] = f" {name} "
+        self.write("outputs/commitments.md", text.replace(row, "|".join(cells)))
+
+    def report(self, stage="validation_plan"):
+        return self.check(stage)[1]
+
+    def team_codes(self, stage="validation_plan"):
+        report = self.report(stage)
+        return ({p["code"] for p in report["problems"] if p["code"].startswith("TEAM_")},
+                {w["code"] for w in report["warnings"] if w["code"].startswith("TEAM_")})
+
+    def test_no_file_is_a_warning_only(self):
+        before = self.codes("validation_plan")
+        self.assertEqual(self.team_codes(), (set(), {"TEAM_NOT_ASKED"}))
+        self.assertEqual(self.codes("validation_plan"), before)
+        self.assertEqual(self.team_codes("done"), (set(), {"TEAM_NOT_ASKED"}))
+
+    def test_no_warning_without_commitments(self):
+        (self.case / "outputs/commitments.md").unlink()
+        self.assertEqual(self.team_codes(), (set(), set()))
+
+    def test_owners_from_the_roster(self):
+        self.team(TEAM_HEAD + ROSTER)
+        self.owner("Анна К.")
+        self.assertEqual(self.team_codes(), (set(), set()))
+        self.assertEqual(self.team_codes("done"), (set(), set()))
+
+    def test_unknown_owner_has_its_line(self):
+        self.team(TEAM_HEAD + ROSTER)
+        report = self.report()
+        found = [(p["code"], p["file"], p.get("line")) for p in report["problems"] if p["code"].startswith("TEAM_")]
+        self.assertEqual(found, [("TEAM_UNKNOWN_OWNER", "outputs/commitments.md", 13)])
+
+    def test_several_owners(self):
+        self.team(TEAM_HEAD + ROSTER)
+        self.owner("Анна К., Игорь С.")
+        self.assertEqual(self.team_codes(), (set(), set()))
+        self.owner("Анна К., Олег Р.")
+        self.assertEqual(self.team_codes()[0], {"TEAM_UNKNOWN_OWNER"})
+
+    def test_owner_must_be_exactly_a_name(self):
+        self.team(TEAM_HEAD + ROSTER)
+        for cell in ("Анна К. (аналитик)", "анна к.", "Анна"):
+            with self.subTest(cell):
+                self.owner(cell)
+                self.assertEqual(self.team_codes()[0], {"TEAM_UNKNOWN_OWNER"})
+
+    def test_inner_spaces_are_collapsed(self):
+        self.team(TEAM_HEAD + ROSTER)
+        self.owner("  Анна   К. ")
+        self.assertEqual(self.team_codes(), (set(), set()))
+
+    def test_not_named_lets_any_owner_pass(self):
+        self.team(TEAM_HEAD + "Состав не назван: ответственные записаны ролями.\n")
+        self.assertEqual(self.team_codes(), (set(), set()))
+
+    def test_source_action_is_checked(self):
+        for action in ("ACT-0999", "ACT-0001"):
+            with self.subTest(action):
+                self.team(TEAM_HEAD.replace("ACT-0004", action) + ROSTER)
+                self.owner("Анна К.")
+                self.assertEqual(self.team_codes()[0], {"TEAM_FORMAT"})
+
+    def test_source_action_without_end(self):
+        journal = self.case / "state" / "actions.jsonl"
+        lines = [line for line in journal.read_text(encoding="utf-8").splitlines()
+                 if not ('"ACT-0004"' in line and '"phase": "end"' in line)]
+        journal.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        self.team(TEAM_HEAD + ROSTER)
+        self.owner("Анна К.")
+        self.assertIn("TEAM_FORMAT", self.team_codes()[0])
+
+    def test_malformed_table_is_only_a_format_problem(self):
+        self.team(TEAM_HEAD + "| Имя | Должность |\n|---|---|\n| Анна К. | аналитик |\n")
+        self.assertEqual(self.team_codes(), ({"TEAM_FORMAT"}, set()))
+
+
 class ContractExample(unittest.TestCase):
     def setUp(self):
         folder = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
@@ -317,7 +406,7 @@ class ContractExample(unittest.TestCase):
 
     def test_contract_example_passes_done(self):
         code, report = self.run_tool(gate, "check", str(self.case), "done")
-        self.assertEqual((code, report["problems"], [w["code"] for w in report["warnings"]]), (0, [], ["BASIS_UNCONFIRMED"]))
+        self.assertEqual((code, report["problems"], [w["code"] for w in report["warnings"]]), (0, [], ["BASIS_UNCONFIRMED", "TEAM_NOT_ASKED"]))
 
     def test_contract_example_has_a_recorded_revision(self):
         code, report = self.run_tool(revision, "affected", str(self.case), "CLM-0001")

@@ -22,6 +22,7 @@ from calc_engine import CalcError, number_matches, numbers_in_text, round_half_u
 from checkpoint import Parser, Refused, UsageError
 from outputs_md import STATUS_CHOSEN_RE, STATUS_PRELIMINARY_RE, is_status_line, split_sections
 from revision import REVISIONS, parse_revisions
+from team import TEAM, owners_of, read_team
 from validate_project import BRACKET_RE, ID_RE, Validator, is_active, is_synthetic_source, prefix_of
 
 EXIT_OK, EXIT_PROBLEMS, EXIT_REFUSED, EXIT_INTERNAL = 0, 1, 4, 5
@@ -522,6 +523,7 @@ class Gate:
 
     def check_plan(self):
         self.check_output(PLAN, SECTIONS[PLAN])
+        self.check_team()
 
     def check_done(self):
         result = self.result
@@ -564,6 +566,40 @@ class Gate:
                                            in split_sections(lines).get(APPROVAL_SECTION, [])):
             result.problem("COMMITMENTS_NOT_CITED", COMMITMENTS, decision["id"],
                            "the section «Согласование» does not cite the current commitments decision")
+
+    def check_team(self):
+        """The roster file and the owners of the actions; runs at validation_plan and done."""
+        result = self.result
+        lines = self.lines_of(COMMITMENTS)
+        roster = read_team(self.root)
+        if roster is None:
+            if lines is not None:
+                result.warning("TEAM_NOT_ASKED", TEAM, None, "commitments exist and the team was not asked")
+            return
+        problems = list(roster.problems)
+        if roster.action_id is not None:
+            action = self.index.get(roster.action_id)
+            end = action.get("end") if isinstance(action, dict) else None
+            kind = action["start"]["kind"] if isinstance(action, dict) and action.get("start") else None
+            if kind != "human_input" or not isinstance(end, dict) or end.get("outcome") != "completed":
+                problems.append(f"{roster.action_id} is not a completed human_input action")
+        for note in problems:
+            result.problem("TEAM_FORMAT", TEAM, None, note)
+        if problems or roster.members is None or lines is None:
+            return
+        names = {name for name, _ in roster.members}
+        body = split_sections(lines).get(ACTION_SECTION, [])
+        rows = [(number, [cell.strip() for cell in line.strip().strip("|").split("|")])
+                for number, line in body if line.lstrip().startswith("|")]
+        if not rows or rows[0][1] != ACTION_COLUMNS:
+            return
+        for number, cells in rows[1:]:
+            if len(cells) != len(ACTION_COLUMNS) or all(set(cell) <= set(":- ") for cell in cells):
+                continue
+            unknown = [name for name in owners_of(cells[1]) if name not in names]
+            if unknown:
+                result.problem("TEAM_UNKNOWN_OWNER", COMMITMENTS, None,
+                               "not in team.md: " + ", ".join(unknown), number)
 
     def check_actions(self, body):
         rows = [(number, [cell.strip() for cell in line.strip().strip("|").split("|")])
