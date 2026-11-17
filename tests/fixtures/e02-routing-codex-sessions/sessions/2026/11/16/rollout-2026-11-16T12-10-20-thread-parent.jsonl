@@ -1,0 +1,6 @@
+{"type": "session_meta", "payload": {"id": "thread-parent", "thread_source": "user"}}
+{"type": "turn_context", "payload": {"model": "gpt-6.1-sol"}}
+{"type": "response_item", "payload": {"type": "function_call", "name": "spawn_agent", "arguments": "{\"task_name\": \"respondent_1\", \"fork_turns\": \"none\", \"model\": \"gpt-6-luna\", \"message\": \"…\"}"}}
+{"type": "event_msg", "payload": {"type": "item_completed", "item": {"model": "gpt-6-luna"}}}
+{"type": "response_item", "payload": {"type": "function_call", "name": "spawn_agent", "arguments": "{\"task_name\": \"respondent_2\", \"fork_turns\": \"none\", \"message\": \"…\"}"}}
+{"type": "event_msg", "payload": {"type": "item_completed", "item": {"model": "gpt-6.1-sol"}}}

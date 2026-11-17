@@ -2,6 +2,7 @@
 import hashlib
 import importlib.util
 import json
+import shutil
 from pathlib import Path
 import sys
 import tempfile
@@ -405,6 +406,128 @@ class RunHygiene(unittest.TestCase):
                      {"phase": "start", "tool": "chat", "runtime": {"version": "2.1.304"}}]
             (case / "state/actions.jsonl").write_text("\n".join(map(json.dumps, lines)), encoding="utf-8")
             self.assertEqual(report.runtime_lines(case), ["runtime_version given=1 missing=0 session=1"])
+
+
+class Routing(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.root = Path(self._tmp.name)
+        self.results, self.case = self.root / "results", self.root / "case"
+        self.results.mkdir()
+        for folder in ("sources/interviews", "state/interviews", "state"):
+            (self.case / folder).mkdir(parents=True, exist_ok=True)
+
+    def talk(self, folder, name, *header):
+        text = "\n".join(["# Беседа", *header, "", "## Вопрос 1", "Модель: не шапка", ""])
+        (self.case / folder / name).write_text(text, encoding="utf-8")
+
+    def calls(self, *models, name="s1.jsonl"):
+        events = []
+        for model in models:
+            given = {"subagent_type": "respondent", **({"model": model} if model else {})}
+            part = {"type": "tool_use", "name": "Agent", "input": given}
+            events.append({"type": "assistant", "parent_tool_use_id": None, "message": {"content": [part]}})
+        (self.results / name).write_text("\n".join(map(json.dumps, events)), encoding="utf-8")
+
+    def line(self, home=None):
+        (line,) = report.routing_lines(self.results, self.case, home)
+        return line
+
+    def test_routing_line_counts_a_routed_talk(self):
+        self.talk("sources/interviews", "a.md", "Модель: claude-haiku-5-5 (маршрут)", "Проверка роли: пройдена")
+        self.calls("haiku")
+        self.assertEqual(self.line(), "routing talks=1 cheap=1 retried=0 failed_twice=0 called_with_model=1"
+                                      " cost_by_model=unknown")
+
+    def test_routing_line_counts_a_retry_and_a_rejected_file(self):
+        self.talk("state/interviews", "a.md", "Модель: claude-haiku-5-5 (маршрут)")
+        self.talk("sources/interviews", "a.md", "Модель: claude-sonnet-5-5 (повтор)", "Проверка роли: пройдена")
+        lines = [{"phase": "start", "retry_of": "A1", "retry_reason": "role_check: TOO_LONG"},
+                 {"phase": "start", "retry_of": "A2", "retry_reason": "роль не загружена"}, {"phase": "end"}]
+        (self.case / "state/actions.jsonl").write_text("\n".join(map(json.dumps, lines)), encoding="utf-8")
+        self.calls("haiku")
+        self.assertIn("talks=1 cheap=1 retried=1 failed_twice=0", self.line())
+
+    def test_routing_line_counts_a_twice_failed_talk(self):
+        self.talk("sources/interviews", "a.md", "Проверка роли: не пройдена (TOO_LONG)")
+        self.talk("state/interviews", "b.md", "Проверка роли: не пройдена (TOO_LONG)")
+        self.assertIn("failed_twice=1", self.line())
+
+    def test_routing_line_flags_a_model_written_without_a_call(self):
+        for name in ("a.md", "b.md"):
+            self.talk("sources/interviews", name, "Модель: claude-haiku-5-5 (маршрут)")
+        self.calls("haiku", None)
+        line = self.line()
+        self.assertIn("cheap=2 retried=0 failed_twice=0 called_with_model=1 flag=cheap_without_call", line)
+
+    def test_routing_line_without_the_routing_file(self):
+        self.talk("sources/interviews", "a.md", "Изоляция: да")
+        self.calls(None)
+        line = self.line()
+        self.assertIn("talks=1 cheap=0", line)
+        self.assertIn("called_with_model=0", line)
+        self.assertNotIn("flag=", line)
+
+    def test_routing_ignores_talks_from_the_transfer_archive(self):
+        import zipfile
+        self.talk("sources/interviews", "old.md", "Модель: x (маршрут)", "Проверка роли: не пройдена (TOO_LONG)")
+        self.talk("state/interviews", "old2.md", "Модель: x (маршрут)")
+        with zipfile.ZipFile(self.results / "handoff-received.zip", "w") as archive:
+            archive.writestr(r"case\sources\interviews\old.md", "x")
+            archive.writestr("case/state/interviews/old2.md", "x")
+        self.assertIn("talks=0 cheap=0 retried=0 failed_twice=0", self.line())
+
+    def test_cost_by_model_from_the_canary_sample(self):
+        sample = (ROOT / "tests/fixtures/e02-routing-canary.jsonl").read_text(encoding="utf-8")
+        (self.results / "s1.jsonl").write_text(sample, encoding="utf-8")
+        result = next(e for e in map(json.loads, sample.splitlines()) if e["type"] == "result")
+        expected = {m: round(u["costUSD"], 4) for m, u in result["modelUsage"].items()}
+        self.assertEqual(set(expected), {"claude-sonnet-5-5", "claude-haiku-5-5"})
+        line = self.line()
+        self.assertIn("called_with_model=1", line)
+        self.assertTrue(line.endswith(f"cost_by_model={expected}"), line)
+
+    def test_cost_by_model_is_unknown_without_the_result_event(self):
+        self.calls("haiku")
+        self.assertTrue(self.line().endswith("cost_by_model=unknown"))
+        events = [{"type": "result", "modelUsage": {"m": {"inputTokens": 1}}}]
+        (self.results / "s2.jsonl").write_text("\n".join(map(json.dumps, events)), encoding="utf-8")
+        self.assertTrue(self.line().endswith("cost_by_model=unknown"))
+
+    def codex_results(self):
+        event = {"type": "item.completed", "item": {"type": "collab_tool_call", "tool": "wait", "receiver_thread_ids": []}}
+        (self.results / "s1.jsonl").write_text(json.dumps(event), encoding="utf-8")
+
+    def codex_home(self):
+        home = self.root / "codex-home"
+        shutil.copytree(ROOT / "tests/fixtures/e02-routing-codex-sessions", home)
+        return home, next(home.glob("sessions/**/rollout-*parent.jsonl"))
+
+    def test_codex_called_with_model_from_the_session_files(self):
+        self.codex_results()
+        home, _ = self.codex_home()
+        self.assertIn("called_with_model=1", self.line(home))
+        self.assertTrue(self.line(home).endswith("cost_by_model=unknown"))
+        self.assertNotIn("flag=", self.line(home))
+
+    def test_codex_spawn_without_model_or_with_another_task_is_not_counted(self):
+        self.codex_results()
+        home, parent = self.codex_home()
+        lines = parent.read_text(encoding="utf-8").splitlines()
+        spawn = json.loads(lines[2])
+        args = json.loads(spawn["payload"]["arguments"])
+        spawn["payload"]["arguments"] = json.dumps({**args, "task_name": "reviewer_1"})
+        lines[2] = json.dumps(spawn)
+        lines.insert(1, "{broken")
+        lines.append(json.dumps({"type": "response_item", "payload": {"type": "function_call", "name": "spawn_agent",
+                                                                      "arguments": "not json"}}))
+        parent.write_text("\n".join(lines), encoding="utf-8")
+        self.assertIn("called_with_model=0", self.line(home))
+
+    def test_codex_without_the_session_files_is_unknown(self):
+        self.codex_results()
+        self.assertIn("called_with_model=unknown", self.line())
 
 
 class Timing(unittest.TestCase):

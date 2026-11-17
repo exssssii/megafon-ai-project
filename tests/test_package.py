@@ -33,6 +33,11 @@ class PackageCheck(unittest.TestCase):
     def test_a_missing_required_file_is_named(self):
         self.assertEqual(self.check(drop=("uv.lock",)), [("missing", "uv.lock")])
 
+    def test_the_routing_file_and_the_checker_are_required(self):
+        for rel in ("agent/workflows/interview-routing.md", "tools/role_check.py"):
+            self.assertIn(rel, package.REQUIRED)
+            self.assertEqual(self.check(drop=(rel,)), [("missing", rel)])
+
     def test_local_state_and_user_cases_are_refused(self):
         found = self.check({".work/STATE.md": "", ".venv/pyvenv.cfg": "", "tools/__pycache__/a.pyc": "",
                             ".claude/settings.local.json": "{}", "projects/acme/brief.md": "", "projects/.gitkeep": "",

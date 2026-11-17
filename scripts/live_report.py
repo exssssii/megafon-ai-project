@@ -278,6 +278,15 @@ def codex_subagents(codex_home: pathlib.Path | None) -> dict[str, int]:
     return found
 
 
+def received_files(results: pathlib.Path) -> set[str]:
+    """Paths (without the first segment) of the files that came in the transfer archive."""
+    try:
+        with zipfile.ZipFile(results / "handoff-received.zip") as archive:
+            return {"/".join(pathlib.PurePosixPath(n.replace("\\", "/")).parts[1:]) for n in archive.namelist()}
+    except (OSError, zipfile.BadZipFile):
+        return set()
+
+
 def subagent_lines(results: pathlib.Path, case: pathlib.Path, codex_home: pathlib.Path | None = None) -> list[str]:
     """Records that claim a separate agent (reviews, isolated talks) against the agents the run shows (D46).
 
@@ -305,12 +314,7 @@ def subagent_lines(results: pathlib.Path, case: pathlib.Path, codex_home: pathli
                 key = tool if tool != "wait" or item.get("receiver_thread_ids") else "wait_for_none"
                 codex[key] = codex.get(key, 0) + 1
     # Records that came in the transfer archive were made by an earlier run, with its own agents.
-    received: set[str] = set()
-    try:
-        with zipfile.ZipFile(results / "handoff-received.zip") as archive:
-            received = {"/".join(pathlib.PurePosixPath(n.replace("\\", "/")).parts[1:]) for n in archive.namelist()}
-    except (OSError, zipfile.BadZipFile):
-        pass
+    received = received_files(results)
     reviews = len([p for p in (case / "state/reviews").glob("review-*.md") if f"state/reviews/{p.name}" not in received])
     talks = [p for p in (case / "sources/interviews").glob("*.md")
              if f"sources/interviews/{p.name}" not in received
@@ -325,6 +329,109 @@ def subagent_lines(results: pathlib.Path, case: pathlib.Path, codex_home: pathli
         seen = unproven = "unknown"
     return [f"subagents calls={calls} codex_collab={codex} codex_threads={seen} reviews={reviews}"
             f" isolated_talks={len(talks)} unproven={unproven}"]
+
+
+def talk_header(path: pathlib.Path) -> list[str]:
+    """Lines of a talk before its first question."""
+    header = []
+    for line in path.read_text(encoding="utf-8-sig", errors="replace").splitlines():
+        if line.startswith("## Вопрос"):
+            break
+        header.append(line)
+    return header
+
+
+def codex_respondent_calls(codex_home: pathlib.Path | None) -> int:
+    """Respondent spawns of Codex that passed a model, read from the session files of the run.
+
+    A spawn is a `spawn_agent` function call in a session that is not itself a subagent. Its
+    arguments are a JSON string; the call counts when `model` is set and `task_name` names a respondent.
+    """
+    total = 0
+    if codex_home is None:
+        return total
+    for path in sorted(codex_home.glob("sessions/**/rollout-*.jsonl")):
+        try:
+            with path.open(encoding="utf-8-sig", errors="replace") as file:
+                lines = file.read().splitlines()
+        except OSError:
+            continue
+        try:
+            meta = (json.loads(lines[0]) or {}).get("payload") or {}
+        except (IndexError, ValueError, AttributeError):
+            continue
+        if not isinstance(meta, dict) or meta.get("thread_source") == "subagent":
+            continue
+        for line in lines[1:]:
+            try:
+                event = json.loads(line)
+                payload = event["payload"]
+                if event["type"] != "response_item" or payload["type"] != "function_call" or payload["name"] != "spawn_agent":
+                    continue
+                given = json.loads(payload["arguments"])
+                total += bool(given.get("model")) and "respondent" in str(given.get("task_name"))
+            except (ValueError, KeyError, TypeError, AttributeError):
+                continue
+    return total
+
+
+def routing_lines(results: pathlib.Path, case: pathlib.Path, codex_home: pathlib.Path | None = None) -> list[str]:
+    """How the talks of the respondent were routed to the cheap model, against the calls the run shows (E02)."""
+    received = received_files(results)
+    talks = cheap = failed = 0
+    for folder, own in (("sources/interviews", True), ("state/interviews", False)):
+        for path in sorted((case / folder).glob("*.md")):
+            if f"{folder}/{path.name}" in received:
+                continue
+            header = talk_header(path)
+            talks += own
+            cheap += any(x.startswith("Модель:") and "(маршрут)" in x for x in header)
+            failed += own and any(x.startswith("Проверка роли: не пройдена") for x in header)
+    retried = 0
+    journal = case / "state/actions.jsonl"
+    if journal.exists():
+        for line in journal.read_text(encoding="utf-8-sig", errors="replace").splitlines():
+            try:
+                entry = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(entry, dict) and entry.get("phase") == "start"                     and str(entry.get("retry_reason") or "").startswith("role_check"):
+                retried += 1
+    calls = with_model = 0
+    cost: dict[str, float] = {}
+    has_result = codex_events = False
+    for log in sorted(results.glob("*.jsonl")):
+        for line in log.read_text(encoding="utf-8-sig", errors="replace").splitlines():
+            try:
+                event = json.loads(line)
+            except ValueError:
+                continue
+            if not isinstance(event, dict):
+                continue
+            if event.get("type") == "assistant" and not event.get("parent_tool_use_id"):
+                for part in (event.get("message") or {}).get("content") or []:
+                    if isinstance(part, dict) and part.get("type") == "tool_use" and part.get("name") in ("Agent", "Task"):
+                        given = part.get("input") or {}
+                        if given.get("subagent_type") == "respondent":
+                            calls += 1
+                            with_model += bool(given.get("model"))
+            if event.get("type") == "result" and isinstance(event.get("modelUsage"), dict):
+                for model, usage in event["modelUsage"].items():
+                    if isinstance(usage, dict) and isinstance(usage.get("costUSD"), (int, float)):
+                        has_result = True
+                        cost[model] = cost.get(model, 0) + usage["costUSD"]
+            codex_events = codex_events or (event.get("type") == "item.completed"
+                                            and isinstance(event.get("item"), dict)
+                                            and event["item"].get("type") == "collab_tool_call")
+    called: int | str = with_model + codex_respondent_calls(codex_home)
+    if codex_events and codex_home is None:
+        called = "unknown"
+    line = (f"routing talks={talks} cheap={cheap} retried={retried} failed_twice={failed}"
+            f" called_with_model={called}")
+    if isinstance(called, int) and cheap > called:
+        line += " flag=cheap_without_call"
+    shown = {m: round(v, 4) for m, v in cost.items()} if has_result else "unknown"
+    return [f"{line} cost_by_model={shown}"]
 
 
 def runtime_lines(case: pathlib.Path) -> list[str]:
@@ -524,6 +631,7 @@ def main() -> int:
     if not args.plain:
         out.extend(runtime_lines(projects / args.case))
         out.extend(subagent_lines(results, projects / args.case, args.codex_home))
+        out.extend(routing_lines(results, projects / args.case, args.codex_home))
     out.extend(fault_lines(results, projects / args.case))
     canary = canary_seen(results, projects, os.environ.get("LIVE_RUN_NOTE", ""))
     out.append(f"canary_seen {canary}")

@@ -1,0 +1,2 @@
+{"type": "session_meta", "payload": {"id": "thread-child2", "thread_source": "subagent", "agent_path": "/root/respondent_2", "parent_thread_id": "thread-parent"}}
+{"type": "turn_context", "payload": {"model": "gpt-6.1-sol"}}

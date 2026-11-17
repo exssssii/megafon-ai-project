@@ -24,6 +24,8 @@
 # the Python environment. Every suite writes timing.tsv with the start and end of each reply.
 # -NoReviewer removes the independent reviewer of E02 (its role and both declarations) from the
 # clone: the variant "agent without the E02 role" of the comparison E06, suite hard only. checks.txt says which way.
+# -NoRouting removes the routing file of the respondent of E02 from the clone: the variant where the
+# respondent runs on the model of the session, suite interviews only. checks.txt says which way.
 # The suite revise runs the checks 2-4 of E01 on a saved case at done (-Handoff, retention-smb only),
 # each in a new chat: a question on the commitments, the table of the next period, the choice of
 # the revision and the new consent. It keeps the case at the moment the agent waits for the choice
@@ -43,6 +45,7 @@ param(
     [switch] $NoSkills,
     [switch] $PlainChat,
     [switch] $NoReviewer,
+    [switch] $NoRouting,
     [switch] $DryRun
 )
 $ErrorActionPreference = 'Stop'
@@ -66,10 +69,11 @@ if ($Case -ne 'retention-smb' -and -not ($hardRun -or $Suite -eq 'continue')) { 
 if ($PlainChat -and $Suite -ne 'hard') { throw 'Only the suite hard takes -PlainChat' }
 # The archives of faults and finish would mix both variants, other suites would overwrite the run with the role.
 if ($NoReviewer -and $Suite -ne 'hard') { throw 'Only the suite hard takes -NoReviewer' }
+if ($NoRouting -and $Suite -ne 'interviews') { throw 'Only the suite interviews takes -NoRouting' }
 # The plain chat has no skills of its own, and an empty list must not read as a failed check.
 if ($PlainChat) { $NoSkills = $true; $NoReviewer = $true }
 if ($Handoff) { $Handoff = (Resolve-Path -LiteralPath $Handoff).Path }
-if (-not $Work) { $Work = Join-Path (Split-Path -Parent $repo) $(switch ($Suite) { 'entry' { 'b07-live' } 'strategy' { 'b08-live' } 'e2e' { "b09-live-$Environment" } 'continue' { "b09-continue-$Environment-$Case" } 'hard' { if ($PlainChat) { "e06-chat-$Environment-$Case" } elseif ($NoReviewer) { "b11-live-$Environment-$Case-noreviewer" } else { "b11-live-$Environment-$Case" } } 'faults' { "b11-faults-$Environment-$Case" } 'finish' { "b11-finish-$Environment-$Case" } 'research' { "fix-research-$Environment-$Case" } 'resume' { "fix-resume-$Environment-$Case" } 'interviews' { "e03-interviews-$Environment" } 'revise' { "e01-revise-$Environment-$Case" } }) }
+if (-not $Work) { $Work = Join-Path (Split-Path -Parent $repo) $(switch ($Suite) { 'entry' { 'b07-live' } 'strategy' { 'b08-live' } 'e2e' { "b09-live-$Environment" } 'continue' { "b09-continue-$Environment-$Case" } 'hard' { if ($PlainChat) { "e06-chat-$Environment-$Case" } elseif ($NoReviewer) { "b11-live-$Environment-$Case-noreviewer" } else { "b11-live-$Environment-$Case" } } 'faults' { "b11-faults-$Environment-$Case" } 'finish' { "b11-finish-$Environment-$Case" } 'research' { "fix-research-$Environment-$Case" } 'resume' { "fix-resume-$Environment-$Case" } 'interviews' { if ($NoRouting) { "e03-interviews-$Environment-norouting" } else { "e03-interviews-$Environment" } } 'revise' { "e01-revise-$Environment-$Case" } }) }
 $Work = [IO.Path]::GetFullPath($Work)
 # A path like C:folder is relative to the current folder, and a clone inside the
 # repository makes its working tree dirty for every later run.
@@ -369,6 +373,19 @@ if ($NoReviewer) {
     if ($missing) { throw "The reviewer is on, but the clone lacks: $($missing -join ', ')" }
 }
 Note-Check "reviewer $(if ($NoReviewer) { 'off' } else { 'on' })"
+
+# The model routing of the respondent of E02. The routing file is the switch: without it the respondent
+# runs on the model of the session.
+$routingFile = 'agent/workflows/interview-routing.md'
+$routingPath = Join-Path $clone $routingFile
+if ($NoRouting) {
+    if (Test-Path -LiteralPath $routingPath) { Remove-Item -LiteralPath $routingPath -Force }
+    if (Test-Path -LiteralPath $routingPath) { throw "Still in the clone: $routingFile" }
+} elseif (-not $PlainChat) {
+    # The plain chat clone holds nothing of the product, the routing file included.
+    if (-not (Test-Path -LiteralPath $routingPath)) { throw "The routing is on, but the clone lacks: $routingFile" }
+}
+Note-Check "routing $(if ($NoRouting -or $PlainChat) { 'off' } else { 'on' })"
 
 # Skills. Claude Code takes its settings as a file: a JSON string argument breaks on Windows.
 # The three overrides are skills of the plugins built into Claude Code 2.1.321; a skill that a
