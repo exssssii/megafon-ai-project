@@ -589,6 +589,31 @@ class Gate:
                 result.problem("OPTION_LIMIT_UNFOUNDED", OPTION_REGISTRY, option["id"],
                                f"limit_check.calc_id: {limit['calc_id']} is not in basis; add it to the basis "
                                "of the option")
+        if isinstance(cost, dict):
+            self.check_option_compared(option)
+
+    def check_option_compared(self, option):
+        """What the comparison with the limit covered: stated by the agent, and a claimed coverage of lost revenue needs a link."""
+        limit, cost = option["limit_check"], option["cost"]
+        if limit["result"] not in ("fits", "exceeds") or cost["status"] == "not_estimated":
+            return  # nothing was compared (the second case is OPTION_LIMIT_UNFOUNDED)
+        if cost["status"] == "none" and "calc_id" not in limit:
+            return
+        compared = limit.get("compared")
+        if compared is None:
+            self.result.problem("OPTION_LIMIT_COMPARED_MISSING", OPTION_REGISTRY, option["id"],
+                                "limit_check.compared is missing: recompute the comparison per the section "
+                                "«Варианты», item 2, and write what was compared: direct_costs (direct spending, "
+                                "including discounts and compensations paid from the budget) or "
+                                "direct_costs_and_lost_revenue (only when the limit is known to cover lost revenue)")
+        elif compared == "direct_costs_and_lost_revenue":
+            note = limit.get("note", "")
+            linked = BRIEF_REF in note or any(prefix_of(ref) in ("CLM", "SRC") for ref in references(note))
+            if not linked:
+                self.result.problem("OPTION_LIMIT_COVERAGE_UNFOUNDED", OPTION_REGISTRY, option["id"],
+                                    "limit_check.note does not show that the limit covers lost revenue: link "
+                                    f"where it comes from ({BRIEF_REF}, [CLM-…] or [SRC-…]), or recompute the "
+                                    "comparison per the section «Варианты», item 2, with compared: direct_costs")
 
     def brief_decision_id(self):
         """ID of the active decision on the brief that the person has chosen; None when there is none."""

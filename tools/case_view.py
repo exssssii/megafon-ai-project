@@ -40,6 +40,8 @@ KIND_LABELS = {"fact": ("Факт", "fact"), "inference": ("Вывод", "infere
                "hypothesis": ("Гипотеза", "hypothesis"), "forecast": ("Прогноз", "forecast")}
 STRATEGY_KINDS = {"keep": "Сохранить", "close": "Закрыть", "develop": "Развивать"}
 COST_LABELS = {"estimated": "оценена", "none": "затрат нет", "not_estimated": "не оценена"}
+COMPARED_LABELS = {"direct_costs": "прямые расходы",
+                   "direct_costs_and_lost_revenue": "прямые расходы и недополученная выручка"}
 LIMIT_LABELS = {"fits": "укладывается", "exceeds": "не укладывается", "unknown": "неизвестно",
                 "no_limit": "в брифе нет ограничения"}
 BLOCKS = (("decision", "Решение"), ("numbers", "Ключевые числа"), ("team", "Команда и сроки"),
@@ -468,7 +470,11 @@ class View:
         cost_note = text_of(cost.get("note") or cost.get("reason"))
         if cost.get("question_id"):
             cost_note = f"{cost_note} ({text_of(cost['question_id'])})".strip()
-        return cost_label, cost_note, limit_label, text_of(limit.get("note"))
+        limit_note = text_of(limit.get("note"))
+        compared = COMPARED_LABELS.get(limit.get("compared"))
+        if compared:
+            limit_note = f"сравнивались {compared}. {limit_note}".strip()
+        return cost_label, cost_note, limit_label, limit_note
 
     def option_card(self, option: dict) -> str:
         rid = option["id"]

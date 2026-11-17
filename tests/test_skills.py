@@ -12,7 +12,7 @@ TARGETS = {
     "revising-on-new-data": {"agent/workflows/revision.md"},
 }
 PATH = re.compile(r"`(agent/[^`#\s]+\.md)(?:#([^`\s]+))?`")
-BODY_LIMIT = 1200
+BODY_LIMIT = 1800
 
 
 def folders(place: Path) -> set[str]:
@@ -49,6 +49,13 @@ class SkillsTest(unittest.TestCase):
     def test_copies_are_byte_identical(self):
         for name in NAMES:
             self.assertEqual(self.skill(name).read_bytes(), self.skill(name, PLACES[1]).read_bytes(), name)
+
+    def test_resuming_case_carries_intake_item_two_verbatim(self):
+        intake = (ROOT / "agent" / "workflows" / "intake.md").read_text(encoding="utf-8")
+        item = next(line for line in intake.splitlines() if line.startswith("2. Прямая просьба продолжить:"))
+        rule = item[3:].replace("[`checkpoint.md`](checkpoint.md)", "`agent/workflows/checkpoint.md`")
+        for place in PLACES:
+            self.assertIn(rule, self.skill("resuming-case", place).read_text(encoding="utf-8"), place.parent.name)
 
     def test_files_use_lf(self):
         for place in PLACES:

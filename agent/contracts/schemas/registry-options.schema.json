@@ -96,6 +96,7 @@
         },
         "result": {"enum": ["fits", "exceeds", "unknown", "no_limit"]},
         "calc_id": {"$ref": "urn:strategy-agent:contracts:common#/$defs/calc_id"},
+        "compared": {"enum": ["direct_costs", "direct_costs_and_lost_revenue"]},
         "note": {"$ref": "urn:strategy-agent:contracts:common#/$defs/text"}
       },
       "allOf": [
@@ -105,7 +106,7 @@
         },
         {
           "if": {"properties": {"result": {"enum": ["unknown", "no_limit"]}}},
-          "then": {"required": ["note"], "not": {"required": ["calc_id"]}}
+          "then": {"required": ["note"], "not": {"anyOf": [{"required": ["calc_id"]}, {"required": ["compared"]}]}}
         }
       ]
     }

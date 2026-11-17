@@ -129,6 +129,10 @@ class ValidatorMarker(CaseTestCase):
             {"brief_decision": "DEC-0002", "result": "exceeds", "calc_id": "CALC-0001", "note": "x"},
             {"brief_decision": "DEC-0002", "result": "unknown", "note": "не хватает цены"},
             {"brief_decision": None, "result": "no_limit", "note": "бриф не называет"},
+            {"brief_decision": "DEC-0002", "result": "fits", "calc_id": "CALC-0001", "compared": "direct_costs"},
+            {"brief_decision": "DEC-0002", "result": "exceeds", "calc_id": "CALC-0001",
+             "compared": "direct_costs_and_lost_revenue", "note": "Бюджет покрывает потери [бриф]"},
+            {"brief_decision": "DEC-0002", "result": "fits", "compared": "direct_costs"},
         ]
         for limit in valid:
             with self.subTest(limit=limit["result"]):
@@ -144,6 +148,10 @@ class ValidatorMarker(CaseTestCase):
             {"brief_decision": "DEC-0002", "result": "mostly", "note": "x"},
             {"brief_decision": "DEC-0002", "result": "fits", "calc_id": "CLM-0001"},
             {"brief_decision": "DEC-0002", "result": "unknown", "note": "x", "extra": 1},
+            {"brief_decision": "DEC-0002", "result": "unknown", "note": "x", "compared": "direct_costs"},
+            {"brief_decision": None, "result": "no_limit", "note": "x", "compared": "direct_costs"},
+            {"brief_decision": "DEC-0002", "result": "fits", "calc_id": "CALC-0001", "compared": "revenue"},
+            {"brief_decision": "DEC-0002", "result": "fits", "calc_id": "CALC-0001", "compared": ""},
         ]
         for limit in broken:
             with self.subTest(limit=limit):
@@ -545,7 +553,8 @@ class Gate(Base):
         self.v2()
         self.assertNotIn("CHOICE_EXCEEDS_LIMIT", self.warning_codes())
         self.v2(cost={"OPT-0001": {"status": "estimated", "calc_ids": ["CALC-0001"], "note": "x"}},
-                limit={"OPT-0001": {"brief_decision": None, "result": "exceeds", "calc_id": "CALC-0001"}})
+                limit={"OPT-0001": {"brief_decision": None, "result": "exceeds", "calc_id": "CALC-0001",
+                                            "compared": "direct_costs"}})
         self.change("OPT", lambda r: r[0]["basis"].append("CALC-0001") if "CALC-0001" not in r[0]["basis"] else None)
         _, report = self.check("done")
         self.assertEqual(report["problems"], [])
@@ -634,6 +643,61 @@ class Gate(Base):
         self.change("OPT", lambda r: [o["limit_check"].update(brief_decision="DEC-0008") for o in r])
         self.assertEqual(self.codes("done"), set())
 
+    # --- what was compared (limit_check.compared) ---
+
+    LINKED = {"brief_decision": None, "result": "exceeds", "calc_id": "CALC-0001",
+              "compared": "direct_costs_and_lost_revenue", "note": "Бюджет покрывает и потери выручки [бриф]"}
+
+    def test_compared_missing(self):
+        for result in ("fits", "exceeds"):
+            with self.subTest(result):
+                self.v2(limit={"OPT-0003": {"brief_decision": None, "result": result, "calc_id": "CALC-0001"}})
+                for stage in ("options", "done"):
+                    found = self.problem("OPTION_LIMIT_COMPARED_MISSING", stage)
+                    self.assertEqual([p["id"] for p in found], ["OPT-0003"])
+                    self.assertIn("limit_check.compared", found[0]["note"])
+                self.assertEqual(self.problem("OPTION_LIMIT_COMPARED_MISSING", "research"), [])
+
+    def test_compared_direct_costs_is_enough(self):
+        for result in ("fits", "exceeds"):
+            with self.subTest(result):
+                self.v2(limit={"OPT-0003": {"brief_decision": None, "result": result, "calc_id": "CALC-0001",
+                                            "compared": "direct_costs"}})
+                self.assertEqual(self.problem("OPTION_LIMIT_COMPARED_MISSING", "done"), [])
+                self.assertEqual(self.problem("OPTION_LIMIT_COVERAGE_UNFOUNDED", "done"), [])
+
+    def test_compared_is_not_asked_when_nothing_was_compared(self):
+        none = {"status": "none", "note": "Затрат нет"}
+        self.v2(cost={"OPT-0002": none}, limit={"OPT-0002": {"brief_decision": None, "result": "fits"}})
+        self.assertEqual(self.problem("OPTION_LIMIT_COMPARED_MISSING", "done"), [])
+        self.v2()  # unknown and no_limit
+        self.assertEqual(self.problem("OPTION_LIMIT_COMPARED_MISSING", "done"), [])
+
+    def test_coverage_needs_a_link_in_the_note(self):
+        self.v2(limit={"OPT-0003": dict(self.LINKED, note="Бюджет покрывает и потери выручки")})
+        found = self.problem("OPTION_LIMIT_COVERAGE_UNFOUNDED", "options")
+        self.assertEqual([p["id"] for p in found], ["OPT-0003"])
+        self.assertIn("limit_check.note", found[0]["note"])
+        self.v2(limit={"OPT-0003": {k: v for k, v in self.LINKED.items() if k != "note"}})
+        self.assertEqual([p["id"] for p in self.problem("OPTION_LIMIT_COVERAGE_UNFOUNDED", "done")], ["OPT-0003"])
+
+    def test_coverage_accepts_brief_claim_or_source_link(self):
+        for ref in ("[бриф]", "[CLM-0002]", "[SRC-0001]", "[CLM-0002, CLM-0003]"):
+            with self.subTest(ref):
+                self.v2(limit={"OPT-0003": dict(self.LINKED, note=f"Бюджет покрывает потери {ref}")})
+                self.assertEqual(self.problem("OPTION_LIMIT_COVERAGE_UNFOUNDED", "done"), [])
+                self.assertEqual(self.problem("OPTION_LIMIT_COMPARED_MISSING", "done"), [])
+
+    def test_compared_is_not_asked_of_a_case_without_the_marker(self):
+        for stage in ("options", "done"):
+            self.assertEqual(self.problem("OPTION_LIMIT_COMPARED_MISSING", stage), [])
+            self.assertEqual(self.problem("OPTION_LIMIT_COVERAGE_UNFOUNDED", stage), [])
+
+    def test_withdrawn_option_is_not_asked_for_compared(self):
+        self.v2(limit={"OPT-0003": {"brief_decision": None, "result": "fits", "calc_id": "CALC-0001"}})
+        self.change("OPT", lambda r: r[2].update(record_status="withdrawn", status_reason="не нужен"))
+        self.assertEqual(self.problem("OPTION_LIMIT_COMPARED_MISSING", "options"), [])
+
     def test_messages_name_the_field_they_are_about(self):
         def stale():
             self.add_brief()
@@ -662,6 +726,10 @@ class Gate(Base):
             ("OPTION_LIMIT_MISSING", "limit_check", lambda: self.v2(limit={"OPT-0002": None})),
             ("OPTION_LIMIT_STALE", "limit_check.brief_decision", stale),
             ("OPTION_LIMIT_UNFOUNDED", "limit_check.calc_id", unfounded_limit),
+            ("OPTION_LIMIT_COMPARED_MISSING", "limit_check.compared",
+             lambda: self.v2(limit={"OPT-0003": {"brief_decision": None, "result": "fits", "calc_id": "CALC-0001"}})),
+            ("OPTION_LIMIT_COVERAGE_UNFOUNDED", "limit_check.note",
+             lambda: self.v2(limit={"OPT-0003": dict(self.LINKED, note="покрывает")})),
             ("OPTION_GAP_NOT_SHOWN", "cost.question_id", not_shown),
             ("THRESHOLD_BASIS_MISSING", "Условие успеха и неуспеха", basis_cleared),
         ]

@@ -170,13 +170,14 @@ class DemoPageTest(CaseViewTest):
             records[1]["cost"] = {"status": "not_estimated", "reason": "Нет цены пункта", "question_id": "Q-0002"}
             records[1]["limit_check"] = {"brief_decision": None, "result": "unknown", "note": "Нечего сравнивать"}
             records[2]["cost"] = {"status": "estimated", "calc_ids": ["CALC-0001"], "note": "Учтён объём заявок"}
-            records[2]["limit_check"] = {"brief_decision": None, "result": "exceeds", "calc_id": "CALC-0001"}
+            records[2]["limit_check"] = {"brief_decision": None, "result": "exceeds", "calc_id": "CALC-0001",
+                                         "compared": "direct_costs"}
         self.edit_registry("decisions/options.json", change)
         text = block_of(self.build(), "options")
         for shown in ("Стоимость: затрат нет", "Стоимость: не оценена", "Стоимость: оценена",
                       "Ограничение брифа: не укладывается", "Ограничение брифа: в брифе нет ограничения",
                       "Ограничение брифа: неизвестно", "Нет цены пункта", "Учтён объём заявок",
-                      "Бриф ограничений не называет"):
+                      "Бриф ограничений не называет", "сравнивались прямые расходы"):
             self.assertIn(shown, text)
         self.assertNotIn("<b>совсем</b>", text)
         self.assertIn("&lt;b&gt;совсем&lt;/b&gt;", text)
