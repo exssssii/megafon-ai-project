@@ -956,6 +956,39 @@ class Resume(DemoCaseTestCase):
         self.assertIn("CHECKPOINT_NONE_VALID", [e["code"] for e in result["validation"]["errors"]])
 
 
+class ReadFirst(DemoCaseTestCase):
+    def table(self):
+        """Stage -> procedure files as run-case.md states them in the sentence about stage procedures."""
+        text = (ROOT / "agent" / "workflows" / "run-case.md").read_text(encoding="utf-8")
+        line = next(l for l in text.splitlines() if l.startswith("Процедуры этапов читай"))
+        found = {}
+        for stages, name in re.findall(r"((?:`\w+`(?:, | и )?)+) — \[`([\w.-]+\.md)`\]", line):
+            for stage in re.findall(r"`(\w+)`", stages):
+                found[stage] = ["agent/workflows/" + name]
+        found["intake"] = ["agent/workflows/intake.md"]
+        return found
+
+    def test_mapping_matches_run_case_table(self):
+        self.assertEqual(ck.STAGE_PROCEDURES, self.table())
+        self.assertEqual(set(ck.STAGE_PROCEDURES), set(ck.STAGES))
+
+    def test_files_exist(self):
+        for stage, files in ck.STAGE_PROCEDURES.items():
+            for name in files:
+                self.assertTrue((ROOT / name).is_file(), (stage, name))
+
+    def test_resume_names_files_of_saved_stage(self):
+        code, result = run("resume", self.case)
+        self.assertEqual(result["read_first"], ck.STAGE_PROCEDURES[result["stage"]])
+
+    def test_fresh_case_has_empty_read_first(self):
+        case = self.tmp / "empty-case"
+        write_json(case / "case.json", {"format_version": 1, "case_id": "empty-case", "title": "t",
+                                        "created_at": "2026-11-06T10:00:00+03:00"})
+        code, result = run("resume", case)
+        self.assertEqual(result["read_first"], [])
+
+
 class Restore(DemoCaseTestCase):
     def restore(self, *args):
         return run("restore", self.case, *args)

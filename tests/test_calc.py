@@ -714,18 +714,45 @@ class Journal(Base):
         self.assertEqual((end["id"], end["outcome"], end["result_refs"]), (start["id"], "completed", [report["id"]]))
         self.assertEqual(self.validate()[0], [])
 
-    def test_a_refusal_ends_failed_and_a_duplicate_returns_the_old_record(self):
+    def test_a_refusal_ends_failed_and_a_duplicate_returns_the_old_record_without_an_action(self):
         code, report, _ = self.add_recorded(self.churn() | {"formula": "100 * неизвестное / база"})
         self.assertEqual((code, report["code"]), (REFUSED, "unknown_name"))
         self.assertEqual([line.get("outcome") for line in self.lines()], [None, "failed"])
         first = self.add_recorded(self.churn())[1]
+        before = self.lines()
         code, again, _ = self.add_recorded(self.churn())
         self.assertEqual((code, again["id"], again["existing"]), (OK, first["id"], True))
         self.assertEqual(len(self.registry()), 1)
-        lines = self.lines()
-        self.assertEqual([(line["id"], line["phase"]) for line in lines[2:]],
-                         [("ACT-0002", "start"), ("ACT-0002", "end"), ("ACT-0003", "start"), ("ACT-0003", "end")])
-        self.assertEqual((lines[5]["outcome"], lines[5]["result_refs"]), ("completed", [first["id"]]))
+        self.assertEqual(self.lines(), before)
+        self.assertEqual([(line["id"], line["phase"]) for line in before[2:]], [("ACT-0002", "start"), ("ACT-0002", "end")])
+
+    def test_a_line_from_another_writer_survives_a_repeat(self):
+        self.add_recorded(self.churn())
+        journal = self.case / "state" / "actions.jsonl"
+        foreign = json.dumps({**self.lines()[0], "id": "ACT-0099"}, ensure_ascii=False).encode("utf-8") + b"\n"
+        real = calc.same_calculation
+
+        def same_and_append(*args):
+            with open(journal, "ab") as handle:
+                handle.write(foreign)
+            return real(*args)
+
+        with mock.patch.object(calc, "same_calculation", same_and_append):
+            code, again, _ = self.add_recorded(self.churn())
+        self.assertEqual((code, again["existing"]), (OK, True))
+        data = journal.read_bytes()
+        self.assertIn(foreign, data)
+        self.assertEqual(self.lines()[-1]["phase"], "end")
+
+    def test_a_repeat_keeps_the_journal_byte_for_byte_after_a_torn_tail(self):
+        self.add_recorded(self.churn())
+        journal = self.case / "state" / "actions.jsonl"
+        with open(journal, "ab") as handle:
+            handle.write(b'{"torn":')
+        before = journal.read_bytes()
+        code, again, _ = self.add_recorded(self.churn())
+        self.assertEqual((code, again["existing"]), (OK, True))
+        self.assertEqual(journal.read_bytes(), before)
 
     def test_a_retry_after_a_failure_is_linked(self):
         self.add_recorded(self.churn() | {"formula": "100 * неизвестное / база"})

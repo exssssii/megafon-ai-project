@@ -44,7 +44,7 @@ def denied(event: dict, projects: Path) -> str | None:
     folder = roots[0].relative_to(projects.parent).as_posix() if len(roots) == 1 else "projects/<case-id>"
     return (f"Сначала запиши шаг: tools/checkpoint.py action start {folder} --kind {KINDS[tool]} --tool {tool} "
             "--environment claude_code, затем повтори вызов. При отказе budget_exhausted не вызывай инструмент, "
-            "остальные отказы разбирай по checkpoint.md.")
+            "остальные отказы разбирай по checkpoint.md и checkpoint-recovery.md.")
 
 
 def main() -> int:

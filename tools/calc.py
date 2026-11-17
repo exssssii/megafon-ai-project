@@ -366,6 +366,7 @@ def add_calculation(case: Case, args, limits: dict, refs: list) -> int:
     existing = next((r for r in registry["records"] if same_calculation(r, record)), None)
     if existing is not None:
         refs.append(existing["id"])
+        refs.repeat = True
         emit(finish({**report, "id": existing["id"], "existing": True} | case_findings(before, {existing["id"]}),
                     args.request))
         return EXIT_OK

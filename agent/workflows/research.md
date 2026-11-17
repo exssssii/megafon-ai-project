@@ -1,6 +1,6 @@
 # Исследование
 
-Этап `research`. Начинай его, когда бриф утверждён. Методика — [`research.md`](../knowledge/research.md). Сверка оснований — по [`evidence.md`](evidence.md), числа — по [`calculations.md`](calculations.md), бюджет — по разделу «Бюджет исследования» в [`run-case.md`](run-case.md). Формат записи `Q` — в [контракте](../contracts/README.md).
+Этап `research`. Начинай его, когда бриф утверждён. Методика — [`research.md`](../knowledge/research.md). Сверка оснований — по [`evidence.md`](evidence.md), числа — по [`calculations.md`](calculations.md), бюджет — по разделу «Бюджет исследования» в [`run-case.md`](run-case.md). Формат записи `Q` — в [`question.md`](../contracts/records/question.md): читай перед записью вопроса.
 
 ## План
 

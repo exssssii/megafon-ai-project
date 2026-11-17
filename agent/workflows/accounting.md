@@ -34,7 +34,7 @@ tools/checkpoint.py action human projects/<case-id> --tool chat --environment cl
 
 ## Расход
 
-Расход передаётся в `action end` файлом `--cost-file` с объектом `cost` из [контракта](../contracts/README.md). Без файла расход записан как неизвестный — это честное значение по умолчанию.
+Расход передаётся в `action end` файлом `--cost-file` с объектом `cost` из [контракта действия](../contracts/records/action.md). Без файла расход записан как неизвестный — это честное значение по умолчанию.
 
 | Откуда число | Как записать |
 |---|---|

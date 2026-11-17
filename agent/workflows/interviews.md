@@ -1,6 +1,6 @@
 # Интервью и модельные собеседники
 
-Процедура общая для любой среды. Команды запускаются из корня папки, на Windows через `.venv/Scripts/python.exe`, в других системах через `.venv/bin/python`. Методика — [`interviews.md`](../knowledge/interviews.md), правила собеседника — [`respondent.md`](../roles/respondent.md), формат файлов — в [контрактах](../contracts/README.md).
+Процедура общая для любой среды. Команды запускаются из корня папки, на Windows через `.venv/Scripts/python.exe`, в других системах через `.venv/bin/python`. Методика — [`interviews.md`](../knowledge/interviews.md), правила собеседника — [`respondent.md`](../roles/respondent.md), формат файлов — в [общем контракте](../contracts/README.md) и [`source.md`](../contracts/records/source.md) (читай перед записью источника).
 
 Применяй её в конце исследования, перед выходом из этапа `research` (см. [`research.md`](research.md)), а также в любой момент после утверждения брифа, если пользователь просит составить гайд интервью или поговорить с модельными клиентами.
 

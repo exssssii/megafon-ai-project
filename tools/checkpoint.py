@@ -9,7 +9,8 @@ Commands (run from the repository root, first argument is the case folder):
 The first output line is a JSON report; it carries no absolute paths and no
 exception text. Exit codes: 0 done, 1 refused on the merits (nothing changed),
 2 wrong invocation, 3 internal failure. The procedure for the agent is in
-agent/workflows/checkpoint.md.
+agent/workflows/checkpoint.md; refusals, statuses and file recovery are in
+agent/workflows/checkpoint-recovery.md.
 """
 import argparse
 import contextlib
@@ -62,6 +63,16 @@ BUDGET_RES = {key: re.compile(rf"(\d+)[^\S\n]+{stem}\w*|{stem}\w*(?:[^\S\n]+\w+)
               for key, stem in BUDGET_WORDS.items()}
 BUDGET_KINDS = {"search": "searches", "web_read": "web_reads"}
 STAGES = ["intake", "research", "options", "decision", "strategies", "validation_plan", "done"]
+# Procedure files per stage, as in agent/workflows/run-case.md (a test keeps the two in step).
+STAGE_PROCEDURES = {
+    "intake": ["agent/workflows/intake.md"],
+    "research": ["agent/workflows/research.md"],
+    "options": ["agent/workflows/options.md"],
+    "decision": ["agent/workflows/options.md"],
+    "strategies": ["agent/workflows/strategies.md"],
+    "validation_plan": ["agent/workflows/strategies.md"],
+    "done": ["agent/workflows/strategies.md"],
+}
 REQUEST_KEYS = {"goal", "stage", "open_items", "next_step"}
 
 
@@ -430,6 +441,28 @@ def check_retry(lines: list[dict], args, kind: str, tool: str, input_refs: list[
                       repeat_of=repeat)
 
 
+def untouched_since(path: Path, written: int, start_bytes: bytes) -> bool:
+    """True when the journal is exactly as our start line left it: same size and that line at the end.
+
+    Other writers (`action start/end/human`) do not take the case lock, so a line they appended
+    meanwhile must not be wiped by taking the start line back.
+    """
+    try:
+        if path.stat().st_size != written or written < len(start_bytes):
+            return False
+        with open(path, "rb") as handle:
+            handle.seek(written - len(start_bytes))
+            return handle.read() == start_bytes
+    except OSError:
+        return False
+
+
+class Refs(list):
+    """IDs a recorded run wrote or matched. `repeat` set means the record was not new: no action is kept."""
+
+    repeat = False
+
+
 def recorded_action(root: Path, args, kind: str, tool: str, run, refusals: tuple = (), no_text=None) -> int:
     """Run `run(refs)` and, when the call named an --environment, journal it as one automatic action.
 
@@ -439,8 +472,9 @@ def recorded_action(root: Path, args, kind: str, tool: str, run, refusals: tuple
     line is `completed` with those IDs, or `failed` when no record came of it, `run` raised one of
     `refusals`, or `no_text(refs)` says the record has no text to read (the IDs stay in the end line).
     Any other exception leaves the action without an end. Without --environment the journal is not touched.
+    A run that sets `refs.repeat` only returned a record that already existed: the journal is put back as it was.
     """
-    refs: list[str] = []
+    refs = Refs()
     if getattr(args, "environment", None) is None:
         return run(refs)
     with case_lock(root):
@@ -456,7 +490,11 @@ def recorded_action(root: Path, args, kind: str, tool: str, run, refusals: tuple
         if getattr(args, "retry_of", None):
             line["retry_of"], line["retry_reason"] = args.retry_of, args.retry_reason
         check_lines([line])
+        path = root / JOURNAL
+        before = path.read_bytes() if path.exists() else None
         append_lines(root, [line])
+        written = path.stat().st_size
+        start_bytes = serialize(line)
 
         def finish(outcome: str) -> None:
             end = end_line(version, action_id, outcome, unique(refs), {"basis": "unknown"})
@@ -472,6 +510,17 @@ def recorded_action(root: Path, args, kind: str, tool: str, run, refusals: tuple
             except Refused:
                 pass
             raise
+        if refs.repeat and untouched_since(path, written, start_bytes):
+            if before is None:
+                path.unlink()
+            else:
+                with open(path, "r+b") as handle:
+                    handle.seek(0)
+                    handle.write(before)
+                    handle.truncate(len(before))
+                    handle.flush()
+                    os.fsync(handle.fileno())
+            return code
         finish("completed" if refs and not (no_text and no_text(refs)) else "failed")
         return code
 
@@ -1104,6 +1153,7 @@ def resume(root: Path) -> dict:
         "created_at": current["created_at"] if current else None,
         "goal": current["goal"] if current else None,
         "stage": current["stage"] if current else None,
+        "read_first": list(STAGE_PROCEDURES.get(current["stage"], [])) if current else [],
         "open_items": current["open_items"] if current else [],
         "next_step": current["next_step"] if current else None,
         "totals": current["totals"] if current else None,

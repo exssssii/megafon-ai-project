@@ -355,6 +355,7 @@ def repeat_add(case: Case, record: dict, args, options: Options, limits: dict, o
     if not options.rereads():
         report = {"id": record["id"], "existing": True, "ignored": ignored} | record["extraction"]
         refs.append(record["id"])
+        refs.repeat = True
         emit(report)
         return exit_code(record["extraction"]["status"])
     referencing = case.references(record["id"])

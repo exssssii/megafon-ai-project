@@ -1019,16 +1019,15 @@ class Journal(Base):
         self.assertEqual(code, NO_TEXT)
         self.assertEqual([line.get("outcome") for line in self.lines()], [None, "failed"])
 
-    def test_a_duplicate_returns_the_old_record_and_is_a_second_completed_action(self):
+    def test_a_duplicate_returns_the_old_record_and_writes_no_new_action(self):
         path = self.write("a.md", "текст")
         self.add_recorded(path)
+        before = self.lines()
         code, report, _ = self.add_recorded(path)
         self.assertEqual((code, report["id"], report["existing"]), (OK, "SRC-0001", True))
         self.assertEqual(len(self.sources()), 1)
-        lines = self.lines()
-        self.assertEqual([(line["id"], line["phase"]) for line in lines],
-                         [("ACT-0001", "start"), ("ACT-0001", "end"), ("ACT-0002", "start"), ("ACT-0002", "end")])
-        self.assertEqual(lines[3]["result_refs"], ["SRC-0001"])
+        self.assertEqual(self.lines(), before)
+        self.assertEqual([(line["id"], line["phase"]) for line in before], [("ACT-0001", "start"), ("ACT-0001", "end")])
 
     def test_an_internal_failure_leaves_the_action_without_an_end(self):
         with mock.patch.object(read_material, "extract", side_effect=RuntimeError("boom")):
