@@ -31,10 +31,15 @@
 # the revision and the new consent. It keeps the case at the moment the agent waits for the choice
 # as handoff-revise; given that archive, revise opens a new chat with the choice: the transfer
 # of check 4. The archive may come from any commit whose case still validates.
+# The suite team runs the checks of E17 on the archive that hard saves after the choice (handoff-<env>.zip):
+# a new chat writes the strategies up to the thresholds and the commitments, then the case ends, a new chat
+# asks who owns what, and with -Team asked the roster changes. -Team asked answers the question about the
+# team with a roster, named gives the roster in the first reply, none answers that there is no team.
 [CmdletBinding()]
 param(
     [ValidateSet('codex', 'claude')] [string] $Environment = 'codex',
-    [ValidateSet('entry', 'strategy', 'e2e', 'continue', 'hard', 'faults', 'finish', 'interviews', 'research', 'resume', 'revise')] [string] $Suite = 'entry',
+    [ValidateSet('entry', 'strategy', 'e2e', 'continue', 'hard', 'faults', 'finish', 'interviews', 'research', 'resume', 'revise', 'team')] [string] $Suite = 'entry',
+    [ValidateSet('asked', 'named', 'none')] [string] $Team = 'asked',
     [ValidateSet('retention-smb', 'direction-b2c')] [string] $Case = 'retention-smb',
     [string] $Codex = '',
     [string] $Model = '',
@@ -62,10 +67,12 @@ $commit = (git rev-parse HEAD).Trim()
 $fromFinal = $Suite -eq 'faults' -or $Suite -eq 'finish' -or $Suite -eq 'resume'
 $hardRun = $Suite -eq 'hard' -or $Suite -eq 'research' -or $fromFinal
 $reviseRun = $Suite -eq 'revise'
-$fullRun = $Suite -eq 'e2e' -or $Suite -eq 'continue' -or $Suite -eq 'interviews' -or $hardRun -or $reviseRun
-if (($Suite -eq 'continue' -or $fromFinal -or $reviseRun) -and -not $Handoff) { throw "The suite $Suite needs -Handoff with the transfer archive" }
+$teamRun = $Suite -eq 'team'
+$fullRun = $Suite -eq 'e2e' -or $Suite -eq 'continue' -or $Suite -eq 'interviews' -or $hardRun -or $reviseRun -or $teamRun
+if (($Suite -eq 'continue' -or $fromFinal -or $reviseRun -or $teamRun) -and -not $Handoff) { throw "The suite $Suite needs -Handoff with the transfer archive" }
 if ($reviseRun -and $Case -ne 'retention-smb') { throw 'The suite revise has the table of the next period only for retention-smb' }
-if ($Case -ne 'retention-smb' -and -not ($hardRun -or $Suite -eq 'continue')) { throw 'Only the suites hard, research, faults, finish, resume and continue take -Case' }
+if ($Case -ne 'retention-smb' -and -not ($hardRun -or $teamRun -or $Suite -eq 'continue')) { throw 'Only the suites hard, research, faults, finish, resume, continue and team take -Case' }
+if ($Team -ne 'asked' -and -not $teamRun) { throw 'Only the suite team takes -Team' }
 if ($PlainChat -and $Suite -ne 'hard') { throw 'Only the suite hard takes -PlainChat' }
 # The archives of faults and finish would mix both variants, other suites would overwrite the run with the role.
 if ($NoReviewer -and $Suite -ne 'hard') { throw 'Only the suite hard takes -NoReviewer' }
@@ -73,7 +80,7 @@ if ($NoRouting -and $Suite -ne 'interviews') { throw 'Only the suite interviews 
 # The plain chat has no skills of its own, and an empty list must not read as a failed check.
 if ($PlainChat) { $NoSkills = $true; $NoReviewer = $true }
 if ($Handoff) { $Handoff = (Resolve-Path -LiteralPath $Handoff).Path }
-if (-not $Work) { $Work = Join-Path (Split-Path -Parent $repo) $(switch ($Suite) { 'entry' { 'b07-live' } 'strategy' { 'b08-live' } 'e2e' { "b09-live-$Environment" } 'continue' { "b09-continue-$Environment-$Case" } 'hard' { if ($PlainChat) { "e06-chat-$Environment-$Case" } elseif ($NoReviewer) { "b11-live-$Environment-$Case-noreviewer" } else { "b11-live-$Environment-$Case" } } 'faults' { "b11-faults-$Environment-$Case" } 'finish' { "b11-finish-$Environment-$Case" } 'research' { "fix-research-$Environment-$Case" } 'resume' { "fix-resume-$Environment-$Case" } 'interviews' { if ($NoRouting) { "e03-interviews-$Environment-norouting" } else { "e03-interviews-$Environment" } } 'revise' { "e01-revise-$Environment-$Case" } }) }
+if (-not $Work) { $Work = Join-Path (Split-Path -Parent $repo) $(switch ($Suite) { 'entry' { 'b07-live' } 'strategy' { 'b08-live' } 'e2e' { "b09-live-$Environment" } 'continue' { "b09-continue-$Environment-$Case" } 'hard' { if ($PlainChat) { "e06-chat-$Environment-$Case" } elseif ($NoReviewer) { "b11-live-$Environment-$Case-noreviewer" } else { "b11-live-$Environment-$Case" } } 'faults' { "b11-faults-$Environment-$Case" } 'finish' { "b11-finish-$Environment-$Case" } 'research' { "fix-research-$Environment-$Case" } 'resume' { "fix-resume-$Environment-$Case" } 'interviews' { if ($NoRouting) { "e03-interviews-$Environment-norouting" } else { "e03-interviews-$Environment" } } 'revise' { "e01-revise-$Environment-$Case" } 'team' { "e17-team-$Team-$Environment-$Case" } }) }
 $Work = [IO.Path]::GetFullPath($Work)
 # A path like C:folder is relative to the current folder, and a clone inside the
 # repository makes its working tree dirty for every later run.
@@ -101,7 +108,7 @@ $clone = Join-Path $Work 'clone'
 $results = Join-Path $Work 'results'
 # The first failure and the new result are both kept, and an archive inside the folders
 # removed below would be gone before it is read.
-if (($hardRun -or $reviseRun) -and -not $DryRun -and (Test-Path -LiteralPath (Join-Path $Work 'results.zip'))) { throw "An earlier run is in ${Work}: keep it and pass another -Work" }
+if (($hardRun -or $reviseRun -or $teamRun) -and -not $DryRun -and (Test-Path -LiteralPath (Join-Path $Work 'results.zip'))) { throw "An earlier run is in ${Work}: keep it and pass another -Work" }
 if ($Handoff -and ($Handoff.StartsWith("$clone\", [StringComparison]::OrdinalIgnoreCase) -or $Handoff.StartsWith("$results\", [StringComparison]::OrdinalIgnoreCase))) { throw 'The archive lies in a folder that is cleared: move it first' }
 $loginHome = Join-Path $Work 'codex-home'
 if ($Environment -eq 'codex') { $env:CODEX_HOME = $loginHome }
@@ -114,7 +121,7 @@ foreach ($stale in @('results.zip', "handoff-$Environment.zip", "handoff-final-$
 }
 if ($fullRun -and $Environment -eq 'claude') { $env:CLAUDE_CODE_DISABLE_AUTO_MEMORY = '1' }
 # Only this script knows the value: if it shows up, the agent printed its environment.
-if ($hardRun -or $reviseRun) { $env:LIVE_RUN_NOTE = [guid]::NewGuid().ToString('N') }
+if ($hardRun -or $reviseRun -or $teamRun) { $env:LIVE_RUN_NOTE = [guid]::NewGuid().ToString('N') }
 New-Item -ItemType Directory -Force -Path $Work, $results | Out-Null
 if ($Environment -eq 'codex') { New-Item -ItemType Directory -Force -Path $loginHome | Out-Null }
 
@@ -574,7 +581,7 @@ function Load-Handoff {
     $from = ([IO.File]::ReadAllText((Join-Path $unpacked 'commit.txt'), $utf8)).Trim()
     # A fix changes the commit: that is what these suites repeat the last steps for.
     # The suite revise validates the case itself instead: only its folder carries over, not a run.
-    if ($fromFinal -or $reviseRun) { Note-Check "archive_from $from" }
+    if ($fromFinal -or $reviseRun -or $teamRun) { Note-Check "archive_from $from" }
     elseif ($from -ne $commit) {
         # A folder carries over only while its format and the utilities that read it stay
         # the same; text of the instructions may change in between.
@@ -756,6 +763,22 @@ if ($DryRun -and $reviseRun) {
     exit 0
 }
 
+if ($DryRun -and $teamRun) {
+    # The saved case after the choice, before the strategies and the question about the team.
+    Load-Handoff
+    & $python (Join-Path $clone 'tools\validate_project.py') "projects/$caseId"
+    if ($LASTEXITCODE -ne 0) { throw 'The transferred folder does not validate' }
+    Check-Choice
+    if ($script:halted) { throw 'The transferred case has no chosen direction: pass the archive hard saves after the choice' }
+    if (Test-Path -LiteralPath (Join-Path $caseFolder 'team.md')) { throw 'The transferred case already has team.md: the question about the team would not come' }
+    if (Test-Path -LiteralPath (Join-Path $caseFolder 'outputs\commitments.md')) { throw 'The transferred case already has commitments: pass the archive hard saves after the choice' }
+    Set-Location -LiteralPath $repo
+    Remove-Item -LiteralPath $helpers -Recurse -Force
+    Remove-Item -LiteralPath $held -Recurse -Force
+    Write-Host 'Dry run passed: no model was called.'
+    exit 0
+}
+
 if ($DryRun) {
     # The sample case keeps its own name: the validator ties it to the folder.
     $caseId = 'demo-case'
@@ -929,6 +952,79 @@ if ($Suite -eq 'e2e') {
         Validate-Case 'revised'
         Save-Handoff 'handoff-final'
     }
+} elseif ($teamRun) {
+    Load-Handoff
+    Validate-Case 'loaded'
+    Note-Check "team_variant $Team"
+    $teamFile = Join-Path $caseFolder 'team.md'
+    $commitments = Join-Path $caseFolder 'outputs\commitments.md'
+    $page = Join-Path $caseFolder 'outputs\case-page.html'
+    function Has-Text([string] $Path, [string] $Text) {
+        if (-not (Test-Path -LiteralPath $Path)) { return 0 }
+        return [int]([IO.File]::ReadAllText($Path, $utf8).Contains($Text))
+    }
+    function Page-Sum { if (Test-Path -LiteralPath $page) { return (Get-FileHash -LiteralPath $page).Hash } return '' }
+    function Gate-Done {
+        $ErrorActionPreference = 'Continue'
+        & $python 'tools/gate.py' check "projects/$caseId" done *> $null
+        $code = $LASTEXITCODE
+        $ErrorActionPreference = 'Stop'
+        return $code
+    }
+    function Outputs-Sums {
+        $sums = @{}
+        foreach ($file in Get-ChildItem -LiteralPath (Join-Path $caseFolder 'outputs') -File -ErrorAction SilentlyContinue) { $sums[$file.Name] = (Get-FileHash -LiteralPath $file.FullName).Hash }
+        return $sums
+    }
+    # Made-up people: the roster is the words of the user, nothing in the case names them.
+    $roster = 'В команде четверо: Анна Соколова — руководитель продукта, Илья Белов — аналитик данных, Мария Ершова — маркетинг и коммуникации, Пётр Гусев — разработка.'
+    $go = "Продолжи кейс $($facts.Name): пиши стратегии и дойди до согласования порогов и обязательств."
+    if ($Team -eq 'named') { $go = "$go $roster" }
+    $t = Say 't1' '' $go
+    if ($Team -ne 'named' -and -not $script:halted) {
+        # The question comes before the commitments, and the roster is not written before the answer.
+        Note-Check "team_file_before_answer $([int](Test-Path -LiteralPath $teamFile))"
+        Note-Check "commitments_before_answer $([int](Test-Path -LiteralPath $commitments))"
+        $answer = if ($Team -eq 'none') { 'Команды нет, над этим работаю я один. Продолжай.' } else { "$roster Продолжай." }
+        $null = Say 't2' $t $answer
+    }
+    $shown = (& $python $usageFile $results) -join ' '
+    $null = Say 't3' $t "Пороги и обязательства подходят. На кейс у меня ушло около 15 минут. $shown Заверши кейс."
+    if (-not $script:halted) {
+        Note-Check "gate_done_final $(Gate-Done)"
+        Validate-Case 'final'
+        Note-Check "team_file $([int](Test-Path -LiteralPath $teamFile))"
+        if ($Team -eq 'none') { Note-Check "team_not_named $(Has-Text $teamFile 'Состав не назван')" }
+        else { Note-Check "commitments_name_owner $(Has-Text $commitments 'Соколова')" }
+        Note-Check "case_page $([int](Test-Path -LiteralPath $page))"
+        Copy-Item -LiteralPath $caseFolder -Destination (Join-Path $results 'after-done') -Recurse
+    }
+    # A new chat answers from the commitments and changes nothing.
+    $before = Outputs-Sums
+    $t = Say 't4' '' "Напомни по кейсу $($facts.Name): кто за что отвечает и к каким срокам?"
+    if (-not $script:halted) {
+        $after = Outputs-Sums
+        $moved = @($before.Keys + $after.Keys | Sort-Object -Unique | Where-Object { $_ -ne 'accounting.md' -and $before[$_] -ne $after[$_] })
+        Note-Check "outputs_changed_on_question [$($moved -join ', ')]"
+    }
+    if ($Team -eq 'asked') {
+        $pageBefore = Page-Sum
+        $null = Say 't5' $t 'Мария Ершова ушла из команды, маркетингом и коммуникациями теперь занимается Ольга Титова. Обнови состав и обязательства.'
+        if (-not $script:halted) {
+            # The changed owners need a new consent: until it comes the case is not expected to pass done.
+            Note-Check "gate_done_before_consent $(Gate-Done)"
+            Copy-Item -LiteralPath $caseFolder -Destination (Join-Path $results 'before-consent') -Recurse
+        }
+        $null = Say 't6' $t 'Новое распределение подходит.'
+        if (-not $script:halted) {
+            Note-Check "gate_done_changed $(Gate-Done)"
+            Validate-Case 'changed'
+            Note-Check "team_new_member $(Has-Text $teamFile 'Титова') team_old_member $(Has-Text $teamFile 'Ершова')"
+            Note-Check "commitments_new_member $(Has-Text $commitments 'Титова') commitments_old_member $(Has-Text $commitments 'Ершова')"
+            Note-Check "case_page_rebuilt $([int]((Page-Sum) -ne $pageBefore))"
+        }
+    }
+    if (-not $script:halted) { Save-Handoff 'handoff-final' }
 } elseif ($Suite -eq 'strategy') {
     $t = Say 'm1' '' 'Новый кейс parcel-repeat. Падает доля повторных заказов в сервисе "Постомат рядом". Нужно решить, что делать с направлением, и получить продуктовую и коммуникационную стратегии с планом проверки. Результат читаю сам, срок неделя. Материалы: inbox/support-report.md, inbox/marketing-note.md, inbox/orders.csv. Поиск в интернете не используй, бюджет ноль поисков.'
     $null = Say 'm2' $t 'Бриф утверждаю. Исследуй по материалам и дойди до вариантов и рекомендации, затем жди моего выбора.'
