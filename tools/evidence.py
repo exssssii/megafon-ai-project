@@ -1006,6 +1006,22 @@ def output_target(case: Case, target: str) -> tuple[str, list[str]]:
         raise Refused(message) from error
 
 
+BRIEF_KEYS = ("type", "id", "owner", "source_id", "status", "source_status", "path", "depth")
+
+
+def brief_views(items: list[dict]) -> list[dict | None]:
+    """What a brief trace shows of each item: all of an item with warnings and of the blocks after it,
+    one short line for a clean item, nothing for the blocks after a clean link. Numbers stay the same."""
+    views, warned = [], False
+    for item in items:
+        if item["type"] != "block":
+            warned = "warnings" in item
+            views.append(item if warned else {key: item[key] for key in BRIEF_KEYS if key in item})
+        else:
+            views.append(item if warned else None)
+    return views
+
+
 def cmd_trace(args, limits: dict) -> int:
     if args.start < 1:
         raise Refused("--from начинается с 1")
@@ -1023,17 +1039,24 @@ def cmd_trace(args, limits: dict) -> int:
         target, links = output_target(case, target)
         tracer.add({"type": "output", "path": target, "depth": 0})
         tracer.run(links, depth=1, via=target)
-    shown, used = [], 0
+    views = brief_views(tracer.items) if args.brief else tracer.items
+    shown, used, passed = [], 0, 0
     for number in range(args.start, len(tracer.items) + 1):
-        line = json.dumps({"i": number} | tracer.items[number - 1], ensure_ascii=False)
-        if shown and used + len(line) + 1 > limits["max_output_chars"]:
-            break
-        shown.append(line)
-        used += len(line) + 1
-    resume = args.start + len(shown)
-    emit({"command": "trace", "target": target, "blocks_total": len(tracer.items), "blocks_shown": len(shown),
-          "next": f"--from {resume}" if resume <= len(tracer.items) else None,
-          "warnings": dict(sorted(tracer.warnings.items()))})
+        view = views[number - 1]
+        if view is not None:
+            line = json.dumps({"i": number} | view, ensure_ascii=False)
+            if shown and used + len(line) + 1 > limits["max_output_chars"]:
+                break
+            shown.append(line)
+            used += len(line) + 1
+        passed += 1
+    resume = args.start + passed
+    header = {"command": "trace", "target": target, "blocks_total": len(tracer.items), "blocks_shown": passed,
+              "next": f"--from {resume}" if resume <= len(tracer.items) else None,
+              "warnings": dict(sorted(tracer.warnings.items()))}
+    if args.brief:
+        header |= {"brief": True, "warned_items": sum("warnings" in item for item in tracer.items)}
+    emit(header)
     if shown:
         print(DATA_NOTICE)
         print("\n".join(shown))
@@ -1078,6 +1101,7 @@ def build_parser() -> Parser:
     trace.add_argument("case", type=Path)
     trace.add_argument("target")
     trace.add_argument("--from", dest="start", type=int, default=1)
+    trace.add_argument("--brief", action="store_true")
     trace.set_defaults(run=cmd_trace)
 
     impact = commands.add_parser("impact")

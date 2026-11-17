@@ -674,5 +674,98 @@ class Records(Base):
         self.assertFalse((self.case / CALCS).exists())
 
 
+class Journal(Base):
+    """With --environment calc add writes the action journal itself."""
+
+    def setUp(self):
+        super().setUp()
+        self.src = self.register(EXAMPLES / "retention-smb" / "materials" / "metrics.xlsx")
+
+    def churn(self):
+        n2, n10 = self.xlsx_n(self.src, SHEET, 2), self.xlsx_n(self.src, SHEET, 10)
+        period = "2025-04..2025-12"
+        return request([cells(self.src, n2, "E", "клиентов", period, "ушедшие", n10, "sum"),
+                        cells(self.src, n2, "C", "клиентов", period, "база", n10, "sum")],
+                       "100 * ушедшие / база", "%", period, 2)
+
+    def lines(self):
+        path = self.case / "state" / "actions.jsonl"
+        if not path.exists():
+            return []
+        return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
+
+    def add_recorded(self, data, *extra):
+        path = self.request(data)
+        code, report, _ = self.call(calc.main, ["add", self.case, path, "--environment", "claude_code",
+                                                "--model", "m1", "--access", "subscription", *extra])[:3]
+        return code, report, path
+
+    def test_without_environment_the_journal_is_untouched(self):
+        self.computed(self.churn())
+        self.assertEqual(self.lines(), [])
+
+    def test_a_computed_record_is_a_completed_compute_action(self):
+        code, report, _ = self.add_recorded(self.churn())
+        self.assertEqual(code, OK, report)
+        start, end = self.lines()
+        self.assertEqual((start["kind"], start["tool"], start["environment"], start["model"], start["input_refs"]),
+                         ("compute", "calc.py add", "claude_code", "m1", []))
+        self.assertEqual(start["runtime"], {"version": None, "access": "subscription", "cost_source": None})
+        self.assertEqual((end["id"], end["outcome"], end["result_refs"]), (start["id"], "completed", [report["id"]]))
+        self.assertEqual(self.validate()[0], [])
+
+    def test_a_refusal_ends_failed_and_a_duplicate_returns_the_old_record(self):
+        code, report, _ = self.add_recorded(self.churn() | {"formula": "100 * неизвестное / база"})
+        self.assertEqual((code, report["code"]), (REFUSED, "unknown_name"))
+        self.assertEqual([line.get("outcome") for line in self.lines()], [None, "failed"])
+        first = self.add_recorded(self.churn())[1]
+        code, again, _ = self.add_recorded(self.churn())
+        self.assertEqual((code, again["id"], again["existing"]), (OK, first["id"], True))
+        self.assertEqual(len(self.registry()), 1)
+        lines = self.lines()
+        self.assertEqual([(line["id"], line["phase"]) for line in lines[2:]],
+                         [("ACT-0002", "start"), ("ACT-0002", "end"), ("ACT-0003", "start"), ("ACT-0003", "end")])
+        self.assertEqual((lines[5]["outcome"], lines[5]["result_refs"]), ("completed", [first["id"]]))
+
+    def test_a_retry_after_a_failure_is_linked(self):
+        self.add_recorded(self.churn() | {"formula": "100 * неизвестное / база"})
+        code, report, _ = self.add_recorded(self.churn(), "--retry-of", "ACT-0001", "--retry-reason", "Формула исправлена")
+        self.assertEqual(code, OK, report)
+        start, end = self.lines()[2:]
+        self.assertEqual((start["retry_of"], start["retry_reason"], end["outcome"]),
+                         ("ACT-0001", "Формула исправлена", "completed"))
+        code, report, _ = self.add_recorded(self.churn(), "--retry-of", "ACT-0009", "--retry-reason", "x")
+        self.assertEqual((code, report["status"]), (REFUSED, "refused"))
+        self.assertEqual(len(self.lines()), 4)
+
+    def test_a_wrong_call_does_not_touch_the_journal(self):
+        path = self.request(self.churn())
+        for argv in (["add", self.case, "--environment", "claude_code"],
+                     ["add", self.case, path, "--environment", "Bad Name"],
+                     ["add", self.case, path, "--environment", "x", "--access", "z"],
+                     ["add", self.case.parent / "nope", path, "--environment", "claude_code"]):
+            with self.subTest(argv[2:]):
+                code, report, _ = self.call(calc.main, argv)[:3]
+                self.assertEqual((code, report["status"]), (REFUSED, "refused"))
+                self.assertEqual(self.lines(), [])
+
+    def test_session_keys_without_environment_are_refused_before_any_work(self):
+        path = self.request(self.churn())
+        for key in (("--model", "m1"), ("--runtime-version", "1"), ("--access", "api"), ("--cost-source", "x"),
+                    ("--retry-of", "ACT-0001"), ("--retry-reason", "r")):
+            with self.subTest(key[0]):
+                code, report, _ = self.call(calc.main, ["add", self.case, path, *key])[:3]
+                self.assertEqual((code, report["status"]), (REFUSED, "refused"))
+                self.assertIn("--environment", json.dumps(report, ensure_ascii=False))
+                self.assertEqual(self.lines(), [])
+
+    def test_an_internal_failure_leaves_the_action_without_an_end(self):
+        path = self.request(self.churn())
+        with mock.patch.object(calc, "evaluate", side_effect=RuntimeError("boom")):
+            code, report, _ = self.call(calc.main, ["add", self.case, path, "--environment", "claude_code"])[:3]
+        self.assertEqual((code, report["status"]), (5, "internal_error"))
+        self.assertEqual([line["phase"] for line in self.lines()], ["start"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -276,5 +276,70 @@ class AddObservations(Base):
         self.assertEqual((code, report["incoming_left"]), (OK, True))
 
 
+class ObservationJournal(Base):
+    def setUp(self):
+        super().setUp()
+        self.id = self.add(self.write("screen.png", image_bytes.png_bytes(1366, 768)))[1]["id"]
+
+    def incoming(self, text, name="obs.md"):
+        folder = self.case / "sources" / "incoming"
+        folder.mkdir(parents=True, exist_ok=True)
+        path = folder / name
+        path.write_bytes(text.encode("utf-8"))
+        return path
+
+    def observe(self):
+        return self.run_tool("add-observations", self.case, self.id, "--text-file", self.incoming(VALID))
+
+    def lines(self):
+        path = self.case / "state" / "actions.jsonl"
+        if not path.exists():
+            return []
+        return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
+
+    def test_the_action_is_journaled_with_environment(self):
+        path = self.incoming(VALID)
+        code, _, _ = self.run_tool("add-observations", self.case, self.id, "--text-file", path,
+                                   "--environment", "codex", "--model", "m1")
+        self.assertEqual(code, OK)
+        start, end = self.lines()
+        self.assertEqual((start["kind"], start["tool"], start["environment"], end["outcome"], end["result_refs"]),
+                         ("file_read", "read_material.py add-observations", "codex", "completed", [self.id]))
+
+    def test_a_bad_file_ends_failed_and_no_flag_leaves_the_journal_alone(self):
+        path = self.incoming("не по формату")
+        code, _, _ = self.run_tool("add-observations", self.case, self.id, "--text-file", path, "--environment", "codex")
+        self.assertEqual(code, REFUSED)
+        self.assertEqual([line["phase"] for line in self.lines()], ["start", "end"])
+        self.assertEqual(self.lines()[1]["outcome"], "failed")
+        before = self.lines()
+        self.observe()
+        self.assertEqual(self.lines(), before)
+
+    def test_a_screen_without_text_ends_failed_and_a_retry_is_linked(self):
+        path = self.incoming(with_label("заслонён"))
+        code, report, _ = self.run_tool("add-observations", self.case, self.id, "--text-file", path,
+                                        "--environment", "codex")
+        self.assertEqual((code, report["status"]), (NO_TEXT, "unavailable"))
+        self.assertEqual([(line["id"], line.get("outcome"), line.get("result_refs")) for line in self.lines()],
+                         [("ACT-0001", None, None), ("ACT-0001", "failed", [self.id])])
+        code, _, _ = self.run_tool("add-observations", self.case, self.id, "--text-file", self.incoming(VALID),
+                                   "--environment", "codex", "--retry-of", "ACT-0001", "--retry-reason", "Другой экран")
+        self.assertEqual(code, OK)
+        start, end = self.lines()[2:]
+        self.assertEqual((start["retry_of"], end["outcome"]), ("ACT-0001", "completed"))
+
+    def test_a_site_snapshot_part_is_not_recorded_this_way(self):
+        registry = self.case / "evidence" / "sources.json"
+        data = json.loads(registry.read_text(encoding="utf-8"))
+        data["records"][0]["origin"] = "public_web"
+        registry.write_text(json.dumps(data), encoding="utf-8")
+        text = self.incoming(VALID)
+        code, report, _ = self.run_tool("add-observations", self.case, self.id, "--text-file", text,
+                                         "--environment", "codex")
+        self.assertEqual((code, report["status"]), (REFUSED, "refused"))
+        self.assertEqual(self.lines(), [])
+
+
 if __name__ == "__main__":
     unittest.main()

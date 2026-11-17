@@ -9,6 +9,7 @@ The first output line is a JSON report without material content. Registry and fi
 inside the case are replaced atomically, the registry last.
 """
 import argparse
+import contextlib
 from datetime import datetime
 import hashlib
 import json
@@ -306,7 +307,43 @@ def commit_new(case: Case, source_id: str, result: Extraction, copied: Path | No
         raise
 
 
-def repeat_add(case: Case, record: dict, args, options: Options, limits: dict, origin: str) -> int:
+NO_TEXT_STATUSES = {"empty", "unreadable", "unsupported", "over_limit", "unavailable"}
+
+
+SESSION_KEYS = ("model", "runtime_version", "access", "cost_source", "retry_of", "retry_reason")
+
+
+@contextlib.contextmanager
+def journaled(args):
+    """With --environment hold the per-case lock from before the case is loaded; else nothing."""
+    given = [f"--{key.replace('_', '-')}" for key in SESSION_KEYS if getattr(args, key, None) is not None]
+    if given and getattr(args, "environment", None) is None:
+        raise Refused(f"{', '.join(given)} без --environment молча не записываются: укажи --environment или убери ключ")
+    with contextlib.ExitStack() as stack:
+        if getattr(args, "environment", None) is not None:
+            try:
+                stack.enter_context(checkpoint.case_lock(args.case))
+            except checkpoint.Refused as error:
+                raise Refused(f"журнал действий: {error.message or error.reason}", journal=error.reason) from None
+        yield
+
+
+def recorded(args, case: Case, kind: str, tool: str, run) -> int:
+    """Journal the command as one automatic action when --environment was given, else just run it.
+
+    A source with no text to read (`empty`, `unreadable`, `unsupported`, `over_limit`, `unavailable`) is
+    a failed action that still names the record.
+    """
+    def no_text(refs: list) -> bool:
+        return any(case.get(ref)["extraction"]["status"] in NO_TEXT_STATUSES for ref in refs)
+
+    try:
+        return checkpoint.recorded_action(case.root, args, kind, tool, run, (Refused, BadOption), no_text)
+    except checkpoint.Refused as error:
+        raise Refused(f"журнал действий: {error.message or error.reason}", journal=error.reason) from None
+
+
+def repeat_add(case: Case, record: dict, args, options: Options, limits: dict, origin: str, refs: list) -> int:
     allowed = args.allowed == "yes"
     if record["origin"] != origin or record["allowed"] != allowed:
         raise Refused("файл уже зарегистрирован с другими origin или allowed", id=record["id"])
@@ -317,6 +354,7 @@ def repeat_add(case: Case, record: dict, args, options: Options, limits: dict, o
         ignored.append("source_url")
     if not options.rereads():
         report = {"id": record["id"], "existing": True, "ignored": ignored} | record["extraction"]
+        refs.append(record["id"])
         emit(report)
         return exit_code(record["extraction"]["status"])
     referencing = case.references(record["id"])
@@ -329,12 +367,21 @@ def repeat_add(case: Case, record: dict, args, options: Options, limits: dict, o
     case.write_extraction(record["id"], result)
     record["extraction"] = extraction_field(result)
     case.save()
+    refs.append(record["id"])
     emit(public(result.report) | {"id": record["id"], "existing": True, "ignored": ignored} | record["extraction"])
     return exit_code(result.status)
 
 
 def cmd_add(args, limits: dict) -> int:
-    case = Case(args.case)
+    if args.environment is not None and args.origin == "public_web":
+        raise Refused("части снимка сайта записываются как web_read вручную: --environment для них не нужен")
+    with journaled(args):
+        case = Case(args.case)
+        return recorded(args, case, "file_read", "read_material.py add",
+                        lambda refs: add_file(case, args, limits, refs))
+
+
+def add_file(case: Case, args, limits: dict, refs: list) -> int:
     require_file(args.file)
     suffix = args.file.suffix.lower()
     if suffix not in SUPPORTED:
@@ -349,7 +396,7 @@ def cmd_add(args, limits: dict) -> int:
     sha256 = sha256_of(args.file)
     existing = case.active_match(sha256, kind)
     if existing is not None:
-        return repeat_add(case, existing, args, options, limits, origin)
+        return repeat_add(case, existing, args, options, limits, origin, refs)
     result = extract(args.file, limits, options)
     if kind == "image" and result.status in ("unreadable", "empty"):
         emit(result.report | {"registered": False})
@@ -374,6 +421,7 @@ def cmd_add(args, limits: dict) -> int:
         record["source_url"] = args.source_url
     case.records.append(record)
     commit_new(case, source_id, result, copied)
+    refs.append(source_id)
     emit(public(result.report) | {"id": source_id, "path": path} | record["extraction"])
     return exit_code(result.status)
 
@@ -583,8 +631,17 @@ def observation_limits(report: dict, parsed) -> str:
 
 
 def cmd_add_observations(args, limits: dict) -> int:
-    case = Case(args.case)
-    record = case.get(args.source)
+    with journaled(args):
+        case = Case(args.case)
+        record = case.get(args.source)
+        if args.environment is not None and record["origin"] == "public_web":
+            raise Refused("части снимка сайта записываются как web_read вручную: --environment для них не нужен",
+                          id=record["id"])
+        return recorded(args, case, "file_read", "read_material.py add-observations",
+                        lambda refs: add_observations(case, record, args, limits, refs))
+
+
+def add_observations(case: Case, record: dict, args, limits: dict, refs: list) -> int:
     if record["type"] != "image":
         raise Refused("наблюдения записываются только для изображения", id=record["id"])
     if record["record_status"] != "active":
@@ -622,6 +679,7 @@ def cmd_add_observations(args, limits: dict) -> int:
     case.write_extraction(record["id"], result)
     record["extraction"] = {"status": status, "complete": status == "ok", "limits": limits_text}
     case.save()
+    refs.append(record["id"])
     done = {"id": record["id"], "screen": parsed.screen, "blocks": len(blocks)} | record["extraction"]
     if parsed.items and not target:
         done["items_ignored"] = len(parsed.items)
@@ -750,6 +808,7 @@ def build_parser() -> Parser:
     add.add_argument("--origin", choices=["user_provided", "public_web", "own_training", "synthetic"])
     add.add_argument("--allowed", required=True, choices=["yes", "no"])
     add.add_argument("--source-url")
+    checkpoint.add_action_keys(add)
     add_reading_options(add)
     add.set_defaults(run=cmd_add)
 
@@ -779,6 +838,7 @@ def build_parser() -> Parser:
     observed.add_argument("case", type=Path)
     observed.add_argument("source")
     observed.add_argument("--text-file", type=Path, required=True)
+    checkpoint.add_action_keys(observed)
     observed.set_defaults(run=cmd_add_observations)
 
     show = commands.add_parser("show")

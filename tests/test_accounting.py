@@ -681,5 +681,30 @@ class SaveAndReport(CaseCopy):
         self.assertEqual((code, result["refused"]), (4, "unsafe_path"))
 
 
+class AutomaticActions(unittest.TestCase):
+    def test_summary_counts_the_actions_of_a_journal_written_by_the_tool(self):
+        """Only the counts are checked: the working time depends on the real clock and is not asserted here."""
+        with tempfile.TemporaryDirectory() as folder:
+            case = Path(folder) / "case"
+            case.mkdir()
+            (case / "case.json").write_text(json.dumps({
+                "format_version": 1, "case_id": "case", "title": "Кейс", "created_at": "2026-11-06T10:00:00+03:00"}),
+                encoding="utf-8")
+            source = Path(folder) / "a.md"
+            source.write_text("текст", encoding="utf-8")
+            import read_material
+            out = io.TextIOWrapper(io.BytesIO(), encoding="utf-8")
+            with redirect_stdout(out):
+                code = read_material.main(["add", str(case), str(source), "--title", "М", "--origin", "user_provided",
+                                           "--allowed", "yes", "--environment", "claude_code"])
+            self.assertEqual(code, 0)
+            lines = ck.read_journal(case)
+            self.assertEqual([line["phase"] for line in lines], ["start", "end"])
+            summary = ac.summarize(lines, [], "2026-11-06T10:00:00+03:00")
+            self.assertEqual(summary["actions"]["total"], 1)
+            self.assertEqual(summary["actions"]["by_kind"]["file_read"]["completed"], 1)
+            self.assertEqual(summary["actions"]["problems"], [])
+
+
 if __name__ == "__main__":
     unittest.main()

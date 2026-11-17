@@ -191,5 +191,138 @@ class Usage(ToolTestCase):
         self.assertEqual((code, result["status"]), (2, "usage_error"))
 
 
+
+
+DEMO = ROOT / "agent" / "contracts" / "examples" / "valid" / "demo-case"
+
+
+class RecordsByNumber(ToolTestCase):
+    """show and list read the registries of a case without changing it."""
+
+    def setUp(self):
+        super().setUp()
+        self.case = self.tmp / "demo-case"
+        shutil.copytree(DEMO, self.case)
+
+    def run_lines(self, *argv, budget=None):
+        out = io.StringIO()
+        patched = tool.load_limits() | ({"max_output_chars": budget} if budget else {})
+        with mock.patch.object(tool, "load_limits", return_value=patched), redirect_stdout(out):
+            code = tool.main([str(a) for a in argv])
+        lines = out.getvalue().splitlines()
+        return code, json.loads(lines[0]), lines[1:]
+
+    def test_show_prints_records_by_number_one_json_per_line_after_the_data_notice(self):
+        before = tree_hash(self.case)
+        code, report, lines = self.run_lines("show", self.case, "CALC-0001", "OPT-0002", "SRC-0001", "CLM-0003",
+                                             "Q-0001", "DEC-0002")
+        self.assertEqual((code, report["status"], report["shown"]), (0, "ok", 6))
+        self.assertEqual(lines[0], tool.DATA_NOTICE)
+        records = [json.loads(line) for line in lines[1:]]
+        self.assertEqual([r["id"] for r in records],
+                         ["CALC-0001", "OPT-0002", "SRC-0001", "CLM-0003", "Q-0001", "DEC-0002"])
+        self.assertEqual(records[0]["result"]["value"], 120)
+        self.assertNotIn("Участник", json.dumps(report, ensure_ascii=False))
+        self.assertEqual(tree_hash(self.case), before)
+
+    def test_show_refuses_unknown_numbers_and_names_all_of_them(self):
+        code, report, lines = self.run_lines("show", self.case, "CLM-0003", "CLM-0099", "OPT-0042")
+        self.assertEqual((code, report["refused"], report["missing"]), (1, "records_not_found",
+                                                                      ["CLM-0099", "OPT-0042"]))
+        self.assertEqual(lines, [])
+
+    def test_show_refuses_a_malformed_number(self):
+        for bad in ("clm-1", "ACT-0001", "CLM-0001; rm", "../x"):
+            with self.subTest(bad):
+                code, report, _ = self.run_lines("show", self.case, bad)
+                self.assertEqual((code, report["refused"]), (1, "bad_id"))
+
+    def test_show_keeps_to_the_output_limit_and_names_what_did_not_fit(self):
+        code, report, lines = self.run_lines("show", self.case, "OPT-0001", "OPT-0002", "OPT-0003", budget=1500)
+        self.assertEqual(code, 0)
+        self.assertLess(report["shown"], 3)
+        self.assertEqual(len(lines) - 1, report["shown"])
+        self.assertEqual(report["shown"] + len(report["not_shown"]), 3)
+        self.assertLessEqual(sum(len(line) + 1 for line in lines[1:]), 1500)
+
+    def test_show_prints_a_record_longer_than_the_limit_in_parts(self):
+        budget = 300
+        whole = json.dumps(self.run_lines("show", self.case, "OPT-0001")[2] and
+                           json.loads(self.run_lines("show", self.case, "OPT-0001")[2][1]), ensure_ascii=False)
+        self.assertGreater(len(whole), budget)
+        parts, start = [], 0
+        for _ in range(100):
+            argv = ["show", self.case, "OPT-0001"] + (["--from", start] if start else [])
+            code, report, lines = self.run_lines(*argv, budget=budget)
+            self.assertEqual((code, report["shown"]), (0, 1))
+            self.assertLessEqual(sum(len(line) + 1 for line in lines[1:]), budget)
+            parts.append(lines[1])
+            if report["next"] is None:
+                break
+            self.assertEqual(report["next"], f"--from {start + len(lines[1])}")
+            start += len(lines[1])
+        self.assertEqual("".join(parts), whole)
+        self.assertNotIn("not_shown", report)
+
+    def test_show_names_a_record_too_long_for_any_call_and_refuses_bad_from(self):
+        code, report, lines = self.run_lines("show", self.case, "OPT-0001", "OPT-0002", budget=300)
+        self.assertEqual(code, 0)
+        self.assertIn("OPT-0001", report["too_long"])
+        for argv in (("OPT-0001", "OPT-0002", "--from", "5"), ("OPT-0001", "--from", "-1"),
+                     ("OPT-0001", "--from", "999999")):
+            with self.subTest(argv):
+                code, report, _ = self.run_lines("show", self.case, *argv)
+                self.assertIn(code, (1, 2))
+
+    def test_list_prints_one_short_line_per_record(self):
+        for registry, prefix, count in (("sources", "SRC", 5), ("claims", "CLM", 9), ("calculations", "CALC", 2),
+                                        ("questions", "Q", None), ("options", "OPT", 3), ("decisions", "DEC", None)):
+            with self.subTest(registry):
+                code, report, lines = self.run_lines("list", self.case, registry)
+                self.assertEqual((code, report["registry"]), (0, registry))
+                self.assertEqual(lines[0], tool.DATA_NOTICE)
+                rows = [json.loads(line) for line in lines[1:]]
+                self.assertTrue(rows)
+                self.assertEqual(report["total"], len(rows))
+                self.assertTrue(all(row["id"].startswith(prefix + "-") and "status" in row for row in rows))
+                self.assertTrue(all(len(json.dumps(row, ensure_ascii=False)) < 400 for row in rows))
+                if count is not None:
+                    self.assertEqual(len(rows), count)
+
+    def test_list_of_calculations_shows_value_with_unit_and_status(self):
+        _, _, lines = self.run_lines("list", self.case, "calculations")
+        first = json.loads(lines[1])
+        self.assertEqual((first["id"], first["value"], first["unit"], first["status"]),
+                         ("CALC-0001", 120, "заявок в месяц", "active"))
+        self.assertIn("name", first)
+
+    def test_list_pages_with_from_and_loses_nothing(self):
+        _, whole_report, whole = self.run_lines("list", self.case, "claims")
+        rows, extra = [], []
+        for _ in range(50):
+            _, report, lines = self.run_lines("list", self.case, "claims", *extra, budget=500)
+            rows += lines[1:]
+            if report["next"] is None:
+                break
+            extra = report["next"].split()
+        self.assertEqual(rows, whole[1:])
+
+    def test_list_refuses_an_unknown_registry_and_names_the_known_ones(self):
+        code, report, _ = self.run_lines("list", self.case, "actions")
+        self.assertEqual((code, report["refused"]), (1, "registry_unknown"))
+        self.assertIn("claims", report["registries"])
+
+    def test_missing_registry_is_empty_and_missing_case_is_refused(self):
+        (self.case / "decisions" / "decisions.json").unlink()
+        code, report, lines = self.run_lines("list", self.case, "decisions")
+        self.assertEqual((code, report["total"], lines), (0, 0, []))
+        code, report, _ = self.run_lines("show", self.case / "none", "CLM-0001")
+        self.assertEqual((code, report["status"]), (2, "usage_error"))
+
+    def test_data_text_stays_out_of_the_first_line(self):
+        _, report, _ = self.run_lines("list", self.case, "claims")
+        self.assertNotIn("заявок", json.dumps(report, ensure_ascii=False))
+
+
 if __name__ == "__main__":
     unittest.main()

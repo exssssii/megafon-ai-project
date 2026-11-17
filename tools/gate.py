@@ -20,6 +20,7 @@ from pathlib import Path
 
 from calc_engine import CalcError, number_matches, numbers_in_text, round_half_up, same_number, to_decimal
 from checkpoint import Parser, Refused, UsageError
+from material_extract import load_limits
 from outputs_md import STATUS_CHOSEN_RE, STATUS_PRELIMINARY_RE, is_status_line, split_sections
 from revision import REVISIONS, parse_revisions
 from team import TEAM, owners_of, read_team
@@ -763,6 +764,17 @@ def run_check(root: Path, stage: str, preliminary: bool) -> Result:
     if report.errors:
         found = sorted({f"{error.code} {error.file}" for error in report.errors})
         result.problem("CASE_INVALID", None, None, ", ".join(found))
+        budget = load_limits()["max_output_chars"]
+        used = 0
+        for number, error in enumerate(report.errors):
+            item = entry(error.code, error.file, error.record_id, error.message, None)
+            used += len(json.dumps(item, ensure_ascii=False)) + 2
+            if number and used > budget:
+                hidden = len(report.errors) - number
+                result.problem("VALIDATOR_ERRORS_NOT_SHOWN", None, None,
+                               f"{hidden} validator errors not shown; tools/validate_project.py lists them all")
+                break
+            result.problems.append(item)
         return result
     Gate(root, validator, stage, preliminary, result).run()
     return result

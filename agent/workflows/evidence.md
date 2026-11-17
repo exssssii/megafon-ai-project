@@ -42,7 +42,7 @@
 tools/evidence.py add projects/<case-id> projects/<case-id>/sources/incoming/<имя>.json
 ```
 
-5. Прочитай ответ и проверь кейс: `tools/validate_project.py projects/<case-id>`.
+5. Прочитай ответ. `evidence.py add` проверяет кейс сам и при новой ошибке в своих записях ничего не записывает, поэтому `validate_project.py` после него отдельно не запускай: кейс целиком проверит `tools/gate.py check`.
 
 Вывод из других записей — `inference`: сначала запиши каждое его основание отдельным утверждением, затем вывод с их ID в `derived_from`. Вывод, опирающийся на неподтверждённое или оспоренное утверждение, остаётся `unconfirmed`. Папку `sources/incoming/` создай, если её нет.
 

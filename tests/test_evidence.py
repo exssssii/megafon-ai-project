@@ -708,6 +708,73 @@ class Navigation(unittest.TestCase):
             self.assertEqual(self.pages("trace", self.case, form)[1], whole)
         self.assertEqual(self.tree(), before)
 
+    def brief_case(self):
+        """An output file whose links give every kind of trace warning and one clean link."""
+        self.run_tool("withdraw", self.case, "SRC-0002", "--reason", "Заменён")
+
+        def quote_lost(data):
+            data["records"][0]["supports"][0]["locator"]["quote"] = "такой фразы в источнике нет"
+
+        def locator_lost(data):
+            data["records"][6]["supports"][0]["locator"]["heading"] = "Нет такого раздела"
+
+        self.rewrite(CLAIMS, quote_lost)
+        self.rewrite(CLAIMS, locator_lost)
+        (self.case / "outputs" / "brief-check.md").write_text(
+            "# Проверка\n\nОдин [CLM-0002]. Два [CLM-0003]. Три [CLM-0001]. Четыре [CLM-0007]. Пять [CLM-0008].\n",
+            encoding="utf-8")
+        return "outputs/brief-check.md"
+
+    def test_brief_trace_keeps_every_warning_and_drops_the_text_of_clean_blocks(self):
+        target = self.brief_case()
+        full_report, full, _ = self.pages("trace", self.case, target)
+        brief_report, brief, _ = self.pages("trace", self.case, target, "--brief")
+        for name in ("locator_not_found", "quote_not_found", "source_withdrawn", "contradiction_unresolved"):
+            self.assertIn(name, full_report["warnings"])
+        self.assertEqual(brief_report["warnings"], full_report["warnings"])
+        self.assertEqual(brief_report["blocks_total"], full_report["blocks_total"])
+        self.assertEqual(brief_report["blocks_shown"], full_report["blocks_shown"])
+        self.assertIsNone(brief_report["next"])
+        self.assertIs(brief_report["brief"], True)
+        warned = [item for item in full if "warnings" in item]
+        self.assertEqual(brief_report["warned_items"], len(warned))
+        self.assertEqual([item for item in brief if "warnings" in item], warned)
+        for item in brief:
+            self.assertIn(item["i"], range(1, full_report["blocks_total"] + 1))
+        index = {json.dumps({k: v for k, v in item.items() if k != "i"}, sort_keys=True) for item in full}
+        for item in brief:
+            if "warnings" in item or item["type"] == "block":
+                self.assertIn(json.dumps({k: v for k, v in item.items() if k != "i"}, sort_keys=True), index)
+        clean = [item for item in full if "warnings" not in item and item["type"] == "block"]
+        shown_blocks = {(item["source_id"], item["n"]) for item in brief if item["type"] == "block"}
+        self.assertTrue(clean)
+        self.assertLess(len(brief), len(full))
+        for key in ("text", "title", "question"):
+            self.assertFalse([item for item in brief if key in item and "warnings" not in item and item["type"] != "block"])
+        self.assertTrue(any((item["source_id"], item["n"]) not in shown_blocks for item in clean))
+        hidden = [item for item in clean if (item["source_id"], item["n"]) not in shown_blocks]
+        shown_texts = {item["text"] for item in brief if item["type"] == "block"}
+        self.assertTrue([item for item in hidden if item["text"] not in shown_texts])
+        short = [item for item in brief if "warnings" not in item and item["type"] != "block"]
+        self.assertTrue(short)
+        for item in short:
+            self.assertLessEqual(set(item), {"i", "type", "id", "owner", "source_id", "status", "source_status", "depth", "path"})
+
+    def test_brief_trace_numbers_and_from_match_the_full_mode(self):
+        target = self.brief_case()
+        _, full, _ = self.pages("trace", self.case, target)
+        _, brief, _ = self.pages("trace", self.case, target, "--brief")
+        by_number = {item["i"]: item for item in full}
+        for item in brief:
+            self.assertEqual(by_number[item["i"]]["type"], item["type"])
+        code, report, lines = self.run_tool("trace", self.case, target, "--brief", "--from", "4")
+        self.assertEqual(code, OK)
+        self.assertEqual(report["blocks_shown"], len(full) - 3)
+        self.assertTrue(all(json.loads(line)["i"] >= 4 for line in lines[1:]))
+        _, paged, count = self.pages("trace", self.case, target, "--brief", budget=700)
+        self.assertGreater(count, 1)
+        self.assertEqual(paged, brief)
+
     def test_from_counts_items_and_a_start_past_the_end_shows_nothing(self):
         _, whole, _ = self.pages("trace", self.case, "CLM-0001")
         code, report, lines = self.run_tool("trace", self.case, "CLM-0001", "--from", "3")

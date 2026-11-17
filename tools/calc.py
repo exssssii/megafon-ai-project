@@ -37,7 +37,9 @@ from evidence import (
     usable_source,
 )
 from material_extract import load_limits
-from read_material import EXIT_INTERNAL, EXIT_OK, EXIT_REFUSED, Case, Parser, Refused, dumps, emit, now, write_atomic
+import checkpoint
+from read_material import (EXIT_INTERNAL, EXIT_OK, EXIT_REFUSED, Case, Parser, Refused, dumps, emit, journaled, now,
+                           write_atomic)
 from validate_project import validate_case
 
 EXIT_MISMATCH = 1
@@ -311,8 +313,21 @@ def evaluate(spec: dict, inputs: list[dict]) -> tuple[dict, list[str], str | Non
     return {"status": "computed", "value": value, "unit": spec["unit"], "period": spec["period"]}, [], dimension
 
 
+def recorded(args, case: Case, run) -> int:
+    """Journal the command as one automatic compute action when --environment was given, else just run it."""
+    try:
+        return checkpoint.recorded_action(case.root, args, "compute", "calc.py add", run, (Refused,))
+    except checkpoint.Refused as error:
+        raise Refused(f"журнал действий: {error.message or error.reason}", journal=error.reason) from None
+
+
 def cmd_add(args, limits: dict) -> int:
-    case = open_case(args.case)
+    with journaled(args):
+        case = open_case(args.case)
+        return recorded(args, case, lambda refs: add_calculation(case, args, limits, refs))
+
+
+def add_calculation(case: Case, args, limits: dict, refs: list) -> int:
     spec = parse_add(read_request(case, args.request, limits))
     registry = load_registry(case)
     before = baseline(case)
@@ -350,12 +365,14 @@ def cmd_add(args, limits: dict) -> int:
               "warnings": warnings}
     existing = next((r for r in registry["records"] if same_calculation(r, record)), None)
     if existing is not None:
+        refs.append(existing["id"])
         emit(finish({**report, "id": existing["id"], "existing": True} | case_findings(before, {existing["id"]}),
                     args.request))
         return EXIT_OK
     snapshot = Snapshot(case, (CALCULATIONS_FILE,))
     registry["records"].append(record)
     write_atomic(case.root / CALCULATIONS_FILE, dumps(registry))
+    refs.append(record["id"])
     after = check_case(case, before, {record["id"]}, snapshot)
     findings = case_findings(after, {record["id"]})
     emit(finish({**report, "id": record["id"], "existing": False,
@@ -410,6 +427,7 @@ def build_parser() -> Parser:
     add = commands.add_parser("add")
     add.add_argument("case", type=Path)
     add.add_argument("request", type=Path)
+    checkpoint.add_action_keys(add)
     add.set_defaults(run=cmd_add)
 
     check = commands.add_parser("check")

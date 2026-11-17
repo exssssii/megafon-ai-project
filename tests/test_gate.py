@@ -7,6 +7,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
@@ -764,7 +765,7 @@ class Done(Base):
             old["status"] = "superseded"
         self.change("DEC", replace)
         self.replace("state/actions.jsonl", '"result_refs": ["DEC-0003"]', '"result_refs": ["DEC-0003", "DEC-0005"]')
-        self.assertEqual(self.codes(), {"CASE_INVALID"})
+        self.assertEqual(self.codes(), {"CASE_INVALID", "WITHDRAWN_USED"})
         self.replace("outputs/validation-plan.md", "[DEC-0003]", "")
         self.assertEqual(self.codes(), {"THRESHOLDS_NOT_CITED"})
         self.replace("outputs/validation-plan.md", "согласованы .", "согласованы [DEC-0005].")
@@ -794,7 +795,39 @@ class Invocation(Base):
         self.write("decisions/options.json", "{")
         code, report = self.check()
         self.assertEqual(code, PROBLEMS)
-        self.assertEqual([item["code"] for item in report["problems"]], ["CASE_INVALID"])
+        codes = [item["code"] for item in report["problems"]]
+        self.assertEqual(codes[0], "CASE_INVALID")
+        self.assertGreater(len(codes), 1)
+
+    def test_validator_errors_over_the_output_limit_are_counted_not_dropped(self):
+        for name in ("decisions/options.json", "decisions/decisions.json", "evidence/claims.json",
+                     "evidence/sources.json", "research/questions.json"):
+            self.write(name, "{")
+        _, full = self.check()
+        errors = [p for p in full["problems"] if p["code"] != "CASE_INVALID"]
+        self.assertGreater(len(errors), 1)
+        with mock.patch.object(gate, "load_limits", return_value={"max_output_chars": 400}):
+            code, report = self.check()
+        problems = report["problems"]
+        self.assertEqual((code, report["passed"], problems[0]["code"]), (PROBLEMS, False, "CASE_INVALID"))
+        more = problems[-1]
+        self.assertEqual(more["code"], "VALIDATOR_ERRORS_NOT_SHOWN")
+        shown = len(problems) - 2
+        self.assertLess(shown, len(errors))
+        self.assertIn(str(len(errors) - shown), more["note"])
+        self.assertIn("validate_project.py", more["note"])
+        self.assertEqual([p["code"] for p in problems[1:-1]], [p["code"] for p in errors[:shown]])
+
+    def test_validator_errors_come_as_separate_problems(self):
+        self.replace("outputs/product-strategy.md", STATUS, STATUS.replace("DEC-0002", "DEC-0001"))
+        _, report = self.check("strategies")
+        first, *rest = report["problems"]
+        self.assertEqual(first["code"], "CASE_INVALID")
+        withdrawn = [p for p in rest if p["code"] == "WITHDRAWN_USED"]
+        self.assertEqual(len(withdrawn), 1)
+        self.assertEqual(withdrawn[0]["file"], "outputs/product-strategy.md")
+        self.assertTrue(withdrawn[0]["note"])
+        self.assertIn("id", withdrawn[0])
 
 
 class ReviewedNumbers(Base):

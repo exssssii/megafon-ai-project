@@ -24,7 +24,7 @@
 7. **Запиши беседы.** Каждую беседу сохрани в `sources/interviews/synthetic-<персонаж>-<n>.md`. Шапка: персонаж, дата, среда, `Изоляция: да` или `Изоляция: нет`, ссылка на карточку. Затем по разделу на пару «вопрос — ответ»: заголовок `## Вопрос 3`, под ним вопрос и ответ дословно. Зарегистрируй файл, без `--origin`: для этого пути значение `synthetic` ставится само.
 
 ```text
-tools/read_material.py add projects/<case-id> projects/<case-id>/sources/interviews/synthetic-skeptic-1.md --title 'Беседа с персонажем: скептик' --allowed yes
+tools/read_material.py add projects/<case-id> projects/<case-id>/sources/interviews/synthetic-skeptic-1.md --title 'Беседа с персонажем: скептик' --allowed yes --environment <среда>
 ```
 
    Беседу, заменённую повтором, отзови: `tools/evidence.py withdraw projects/<case-id> SRC-… --reason '<причина>'`. Гипотезы, записанные из неё, отзови или перепроверь по новой беседе: пометка `(синтетика)` остаётся и у них, отзыв источника её не снимает. Запрещено: подавать ответы собеседника как слова реального человека, править ответ после записи.

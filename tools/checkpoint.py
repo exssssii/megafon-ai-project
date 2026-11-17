@@ -12,11 +12,14 @@ exception text. Exit codes: 0 done, 1 refused on the merits (nothing changed),
 agent/workflows/checkpoint.md.
 """
 import argparse
+import contextlib
 import hashlib
 import json
 import os
 import re
 import sys
+import tempfile
+import time
 from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
@@ -334,6 +337,145 @@ def end_line(version: int, action_id: str, outcome: str, result_refs: list[str],
             "result_refs": result_refs, "cost": cost, "at": now()}
 
 
+LOCK_TIMEOUT = 60.0
+LOCK_POLL = 0.05
+_held_locks: dict[str, int] = {}
+
+
+def _try_lock(handle) -> bool:
+    """One non-blocking attempt at an exclusive OS lock; the OS drops it when the process dies."""
+    try:
+        if os.name == "nt":
+            import msvcrt
+            handle.seek(0)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        return False
+    return True
+
+
+def _unlock(handle) -> None:
+    try:
+        if os.name == "nt":
+            import msvcrt
+            handle.seek(0)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    except OSError:
+        pass
+
+
+@contextlib.contextmanager
+def case_lock(root: Path):
+    """An exclusive per-case lock held by the process, kept outside the case folder (in the temp dir).
+
+    Waits up to LOCK_TIMEOUT seconds, then refuses. Re-entering in the same process is free.
+    """
+    key = os.path.normcase(str(Path(root).resolve()))
+    if _held_locks.get(key):
+        _held_locks[key] += 1
+        try:
+            yield
+        finally:
+            _held_locks[key] -= 1
+        return
+    name = "strategy-agent-case-" + hashlib.sha256(key.encode("utf-8")).hexdigest()[:32] + ".lock"
+    try:
+        # The temp dir may be shared: do not follow a planted link, and accept only a file of this user.
+        descriptor = os.open(Path(tempfile.gettempdir()) / name,
+                             os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        handle = os.fdopen(descriptor, "r+b")
+        if hasattr(os, "getuid") and os.fstat(descriptor).st_uid != os.getuid():
+            handle.close()
+            raise OSError("lock file belongs to another user")
+    except OSError:
+        raise Refused("lock_unavailable", "файл блокировки кейса не открывается: действие не записано") from None
+    try:
+        deadline = time.monotonic() + LOCK_TIMEOUT
+        while not _try_lock(handle):
+            if time.monotonic() >= deadline:
+                raise Refused("lock_timeout", "кейс занят другой командой: действие не записано, повтори вызов позже")
+            time.sleep(LOCK_POLL)
+        _held_locks[key] = 1
+        try:
+            yield
+        finally:
+            del _held_locks[key]
+            _unlock(handle)
+    finally:
+        handle.close()
+
+
+def check_retry(lines: list[dict], args, kind: str, tool: str, input_refs: list[str]) -> None:
+    """The retry link of a start line: both keys together, the target in the journal, the repeated action named."""
+    retry_of, reason = getattr(args, "retry_of", None), getattr(args, "retry_reason", None)
+    if bool(retry_of) != bool(reason and reason.strip()):
+        raise Refused("retry_invalid", "повтор требует и --retry-of, и непустой --retry-reason")
+    repeat = find_repeat(lines, kind, tool, input_refs)
+    if retry_of:
+        entry = action_outcomes(lines).get(retry_of)
+        if entry is None or entry["start"] is None:
+            raise Refused("retry_target_unknown", "действие из --retry-of не найдено в журнале", retry_of=retry_of)
+        if repeat and not same_key(entry["start"], kind, tool, input_refs):
+            raise Refused("retry_target_mismatch",
+                          "повторяется действие с таким же kind, tool и input_ref: --retry-of должен указывать на него",
+                          repeat_of=repeat)
+    elif repeat:
+        raise Refused("repeat", "такое действие уже записано: проверь его исход или повтори с --retry-of и причиной",
+                      repeat_of=repeat)
+
+
+def recorded_action(root: Path, args, kind: str, tool: str, run, refusals: tuple = (), no_text=None) -> int:
+    """Run `run(refs)` and, when the call named an --environment, journal it as one automatic action.
+
+    The whole run, the start line, the work and the end line, holds the per-case lock, so parallel calls
+    are served one after another. The start line is written before the work, after the arguments and
+    the case were accepted. `run` appends the ID of the record it wrote or matched to `refs`. The end
+    line is `completed` with those IDs, or `failed` when no record came of it, `run` raised one of
+    `refusals`, or `no_text(refs)` says the record has no text to read (the IDs stay in the end line).
+    Any other exception leaves the action without an end. Without --environment the journal is not touched.
+    """
+    refs: list[str] = []
+    if getattr(args, "environment", None) is None:
+        return run(refs)
+    with case_lock(root):
+        version = case_version(root)
+        lines = read_journal(root)
+        check_retry(lines, args, kind, tool, [])
+        action_id = next_id(root)
+        line = start_line(version, action_id, argparse.Namespace(tool=tool, environment=args.environment,
+                                                                  model=args.model), kind, [])
+        runtime = runtime_of(args)
+        if runtime is not None:
+            line["runtime"] = runtime
+        if getattr(args, "retry_of", None):
+            line["retry_of"], line["retry_reason"] = args.retry_of, args.retry_reason
+        check_lines([line])
+        append_lines(root, [line])
+
+        def finish(outcome: str) -> None:
+            end = end_line(version, action_id, outcome, unique(refs), {"basis": "unknown"})
+            check_lines([end])
+            check_references(root, read_journal(root), end["result_refs"])
+            append_lines(root, [end])
+
+        try:
+            code = run(refs)
+        except refusals:
+            try:
+                finish("failed")
+            except Refused:
+                pass
+            raise
+        finish("completed" if refs and not (no_text and no_text(refs)) else "failed")
+        return code
+
+
 def unique(values: list[str] | None) -> list[str]:
     return list(dict.fromkeys(values or []))
 
@@ -395,20 +537,7 @@ def cmd_action_start(args) -> int:
     version = case_version(root)
     lines = read_journal(root)
     input_refs = unique(args.input_ref)
-    if bool(args.retry_of) != bool(args.retry_reason and args.retry_reason.strip()):
-        raise Refused("retry_invalid", "повтор требует и --retry-of, и непустой --retry-reason")
-    repeat = find_repeat(lines, args.kind, args.tool, input_refs)
-    if args.retry_of:
-        entry = action_outcomes(lines).get(args.retry_of)
-        if entry is None or entry["start"] is None:
-            raise Refused("retry_target_unknown", "действие из --retry-of не найдено в журнале", retry_of=args.retry_of)
-        if repeat and not same_key(entry["start"], args.kind, args.tool, input_refs):
-            raise Refused("retry_target_mismatch",
-                          "повторяется действие с таким же kind, tool и input_ref: --retry-of должен указывать на него",
-                          repeat_of=repeat)
-    elif repeat:
-        raise Refused("repeat", "такое действие уже записано: проверь его исход или повтори с --retry-of и причиной",
-                      repeat_of=repeat)
+    check_retry(lines, args, args.kind, args.tool, input_refs)
     check_budget(root, lines, args.kind, args.retry_of)
     action_id = next_id(root)
     line = start_line(version, action_id, args, args.kind, input_refs)
@@ -1121,6 +1250,22 @@ def environment_name(value: str) -> str:
     return value
 
 
+def add_session_keys(parser: argparse.ArgumentParser) -> None:
+    """The session details of a start line: one definition for `action start` and the utilities."""
+    parser.add_argument("--model")
+    parser.add_argument("--runtime-version")
+    parser.add_argument("--access")
+    parser.add_argument("--cost-source")
+
+
+def add_action_keys(parser: argparse.ArgumentParser) -> None:
+    """For a utility that journals its own action: an optional --environment and the session details."""
+    parser.add_argument("--environment", type=environment_name)
+    add_session_keys(parser)
+    parser.add_argument("--retry-of")
+    parser.add_argument("--retry-reason")
+
+
 def build_parser() -> Parser:
     parser = Parser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest="command", required=True, parser_class=Parser)
@@ -1133,13 +1278,10 @@ def build_parser() -> Parser:
     start.add_argument("--kind", required=True, choices=KINDS)
     start.add_argument("--tool", required=True)
     start.add_argument("--environment", required=True, type=environment_name)
-    start.add_argument("--model")
+    add_session_keys(start)
     start.add_argument("--input-ref", action="append")
     start.add_argument("--retry-of")
     start.add_argument("--retry-reason")
-    start.add_argument("--runtime-version")
-    start.add_argument("--access")
-    start.add_argument("--cost-source")
     start.set_defaults(run=cmd_action_start)
 
     end = steps.add_parser("end")

@@ -976,5 +976,187 @@ class Safety(Base):
         self.assertEqual(json.loads(result.stdout.splitlines()[0])["encoding"], "cp1251")
 
 
+class Journal(Base):
+    """With --environment the tool writes the action journal itself."""
+
+    ENV = ("--environment", "claude_code", "--model", "m1", "--runtime-version", "1.2.3", "--access", "api",
+           "--cost-source", "none")
+
+    def lines(self):
+        path = self.case / "state" / "actions.jsonl"
+        if not path.exists():
+            return []
+        return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
+
+    def add_recorded(self, path, *extra):
+        return self.add(path, *self.ENV, *extra)
+
+    def test_without_environment_the_journal_is_untouched(self):
+        self.add(self.write("a.md", "текст"))
+        self.assertEqual(self.lines(), [])
+
+    def test_add_writes_start_and_a_completed_end(self):
+        code, report, _ = self.add_recorded(self.write("a.md", "текст"))
+        self.assertEqual((code, report["id"]), (OK, "SRC-0001"))
+        start, end = self.lines()
+        self.assertEqual((start["phase"], start["kind"], start["tool"], start["environment"], start["model"],
+                          start["input_refs"], start["id"]),
+                         ("start", "file_read", "read_material.py add", "claude_code", "m1", [], "ACT-0001"))
+        self.assertEqual(start["runtime"], {"version": "1.2.3", "access": "api", "cost_source": "none"})
+        self.assertEqual((end["phase"], end["id"], end["outcome"], end["result_refs"]),
+                         ("end", "ACT-0001", "completed", ["SRC-0001"]))
+        self.assertEqual(checkpoint.check_lines(self.lines()), None)
+        self.assert_valid()
+
+    def test_a_substantive_refusal_ends_failed(self):
+        code, report, _ = self.add_recorded(self.in_dir / "missing.md")
+        self.assertEqual(code, REFUSED, report)
+        start, end = self.lines()
+        self.assertEqual((start["phase"], end["outcome"], end["result_refs"]), ("start", "failed", []))
+
+    def test_no_text_ends_failed(self):
+        code, _, _ = self.add_recorded(self.write("a.exe", b"MZ"))
+        self.assertEqual(code, NO_TEXT)
+        self.assertEqual([line.get("outcome") for line in self.lines()], [None, "failed"])
+
+    def test_a_duplicate_returns_the_old_record_and_is_a_second_completed_action(self):
+        path = self.write("a.md", "текст")
+        self.add_recorded(path)
+        code, report, _ = self.add_recorded(path)
+        self.assertEqual((code, report["id"], report["existing"]), (OK, "SRC-0001", True))
+        self.assertEqual(len(self.sources()), 1)
+        lines = self.lines()
+        self.assertEqual([(line["id"], line["phase"]) for line in lines],
+                         [("ACT-0001", "start"), ("ACT-0001", "end"), ("ACT-0002", "start"), ("ACT-0002", "end")])
+        self.assertEqual(lines[3]["result_refs"], ["SRC-0001"])
+
+    def test_an_internal_failure_leaves_the_action_without_an_end(self):
+        with mock.patch.object(read_material, "extract", side_effect=RuntimeError("boom")):
+            code, report, _ = self.add_recorded(self.write("a.md", "текст"))
+        self.assertEqual((code, report["status"]), (INTERNAL, "internal_error"))
+        self.assertEqual([line["phase"] for line in self.lines()], ["start"])
+
+    def test_a_wrong_call_does_not_touch_the_journal(self):
+        path = self.write("a.md", "текст")
+        for argv in (("add", self.case, path, "--allowed", "yes", "--environment", "claude_code"),
+                     ("add", self.case, path, "--title", "М", "--allowed", "yes", "--environment", "Bad Name"),
+                     ("add", self.case, path, "--title", "М", "--allowed", "yes", "--environment", "x", "--access", "z"),
+                     ("add", self.base / "no-such-case", path, "--title", "М", "--allowed", "yes",
+                      "--environment", "claude_code")):
+            with self.subTest(argv[2:]):
+                code, report, _ = self.run_tool(*argv)
+                self.assertEqual((code, report["status"]), (REFUSED, "refused"))
+                self.assertEqual(self.lines(), [])
+
+    def test_session_keys_without_environment_are_refused_before_any_work(self):
+        path = self.write("a.md", "текст")
+        keys = (("--model", "m1"), ("--runtime-version", "1"), ("--access", "api"), ("--cost-source", "x"),
+                ("--retry-of", "ACT-0001"), ("--retry-reason", "r"))
+        for key in keys:
+            for argv in (("add", self.case, path, "--title", "М", "--allowed", "yes", *key),
+                         ("add-observations", self.case, "SRC-0001", "--text-file", path, *key)):
+                with self.subTest(argv[0], key=key[0]):
+                    code, report, _ = self.run_tool(*argv)
+                    self.assertEqual((code, report["status"]), (REFUSED, "refused"))
+                    self.assertIn("--environment", json.dumps(report, ensure_ascii=False))
+                    self.assertEqual(self.lines(), [])
+                    self.assertEqual(self.sources(), [])
+
+    def test_a_source_without_text_ends_failed_but_keeps_its_id(self):
+        code, report, _ = self.add_recorded(self.write("e.md", " \n"))
+        self.assertEqual((code, report["status"]), (NO_TEXT, "empty"))
+        self.assertEqual(len(self.sources()), 1)
+        start, end = self.lines()
+        self.assertEqual((end["outcome"], end["result_refs"]), ("failed", ["SRC-0001"]))
+        self.assert_valid()
+
+    def test_a_registered_image_without_observations_stays_completed(self):
+        code, report, _ = self.add_recorded(self.write("s.png", image_bytes.png_bytes(1366, 768)))
+        self.assertEqual((code, report["status"]), (OK, "partial"))
+        self.assertEqual(self.lines()[1]["outcome"], "completed")
+
+    def test_a_site_snapshot_part_is_refused_before_the_journal(self):
+        registry = self.case / "evidence" / "sources.json"
+        self.add(self.write("s.png", image_bytes.png_bytes(1366, 768)))
+        data = json.loads(registry.read_text(encoding="utf-8"))
+        data["records"][0]["origin"] = "public_web"
+        registry.write_text(json.dumps(data), encoding="utf-8")
+        code, report, _ = self.add_recorded(self.write("s.png", image_bytes.png_bytes(1366, 768)),
+                                            "--origin", "public_web")
+        self.assertEqual((code, report["status"]), (REFUSED, "refused"))
+        self.assertEqual(self.lines(), [])
+
+    def test_a_retry_names_the_failed_action_and_accounting_sees_it_closed(self):
+        import accounting
+        self.add_recorded(self.in_dir / "missing.md")
+        path = self.write("a.md", "текст")
+        code, report, _ = self.add_recorded(path, "--retry-of", "ACT-0001", "--retry-reason", "Файл найден")
+        self.assertEqual((code, report["id"]), (OK, "SRC-0001"))
+        lines = self.lines()
+        start = lines[2]
+        self.assertEqual((start["id"], start["retry_of"], start["retry_reason"]), ("ACT-0002", "ACT-0001", "Файл найден"))
+        self.assertEqual(checkpoint.check_lines(lines), None)
+        actions = accounting.summarize(lines, [], "2026-11-05T10:00:00+03:00")["actions"]
+        self.assertEqual([(item["id"], item["settled_by"]) for item in actions["problems"]], [("ACT-0001", "ACT-0002")])
+        self.assertEqual(actions["open"], [])
+        self.assert_valid()
+
+    def test_a_wrong_retry_does_not_touch_the_journal(self):
+        path = self.write("a.md", "текст")
+        for extra in (("--retry-of", "ACT-0001"), ("--retry-reason", "причина"),
+                      ("--retry-of", "ACT-0007", "--retry-reason", "причина"),
+                      ("--retry-of", "ACT-0001", "--retry-reason", "  ")):
+            with self.subTest(extra):
+                code, report, _ = self.add_recorded(path, *extra)
+                self.assertEqual((code, report["status"]), (REFUSED, "refused"))
+                self.assertEqual(self.lines(), [])
+                self.assertEqual(self.sources(), [])
+
+    def test_parallel_calls_on_one_case_get_unique_ids_and_lose_nothing(self):
+        tool = ROOT / "tools" / "read_material.py"
+        procs = []
+        for number in range(4):
+            path = self.write(f"p{number}.md", f"текст номер {number}")
+            procs.append(subprocess.Popen(
+                [sys.executable, str(tool), "add", str(self.case), str(path), "--title", f"М{number}",
+                 "--origin", "user_provided", "--allowed", "yes", "--environment", "claude_code"],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE))
+        results = [(proc.wait(timeout=120), proc.stderr.read()) for proc in procs]
+        for proc in procs:
+            proc.stdout.close()
+            proc.stderr.close()
+        self.assertEqual([code for code, _ in results], [0, 0, 0, 0], results)
+        lines = self.lines()
+        self.assertEqual(len(lines), 8)
+        for number in range(1, 5):
+            action = f"ACT-{number:04d}"
+            self.assertEqual(sorted(line["phase"] for line in lines if line["id"] == action), ["end", "start"])
+        self.assertEqual(len(self.sources()), 4)
+        self.assertEqual({line["outcome"] for line in lines if line["phase"] == "end"}, {"completed"})
+        self.assert_valid()
+
+    def test_a_held_lock_refuses_after_the_timeout_and_leaves_the_journal_alone(self):
+        with checkpoint.case_lock(self.case):
+            holder = subprocess.run(
+                [sys.executable, "-c",
+                 "import sys; sys.path.insert(0, sys.argv[1]); import checkpoint; checkpoint.LOCK_TIMEOUT = 0.3; "
+                 "import read_material; sys.exit(read_material.main(sys.argv[2:]))",
+                 str(ROOT / "tools"), "add", str(self.case), str(self.write("a.md", "текст")), "--title", "М",
+                 "--origin", "user_provided", "--allowed", "yes", "--environment", "claude_code"],
+                capture_output=True, encoding="utf-8")
+        self.assertEqual(holder.returncode, REFUSED, holder.stderr)
+        self.assertIn("lock_timeout", holder.stdout)
+        self.assertEqual(self.lines(), [])
+        self.assertEqual(self.sources(), [])
+
+    def test_a_broken_journal_refuses_before_the_work(self):
+        journal = self.case / "state" / "actions.jsonl"
+        journal.parent.mkdir()
+        journal.write_text("не json\n{}\n", encoding="utf-8")
+        code, report, _ = self.add_recorded(self.write("a.md", "текст"))
+        self.assertEqual((code, report["status"]), (REFUSED, "refused"))
+        self.assertEqual(self.sources(), [])
+
+
 if __name__ == "__main__":
     unittest.main()

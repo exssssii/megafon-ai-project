@@ -307,7 +307,7 @@
 .venv/Scripts/python.exe tools/gate.py check projects/<case-id> <этап> [--preliminary]
 ```
 
-Этапы: `research`, `options`, `decision`, `strategies`, `validation_plan`, `done`. Проверка накопительная и ничего не пишет. Первая строка вывода — JSON с `passed`, `problems` и `warnings`, элементы содержат код, файл, ID и пояснение без текста материалов. Коды выхода: 0 пройдено, 1 найдены проблемы, 4 отказ, 5 сбой. Ошибки валидатора прекращают проверку одним кодом `CASE_INVALID`. `--preliminary` допустим для `strategies` и `validation_plan`.
+Этапы: `research`, `options`, `decision`, `strategies`, `validation_plan`, `done`. Проверка накопительная и ничего не пишет. Первая строка вывода — JSON с `passed`, `problems` и `warnings`, элементы содержат код, файл, ID и пояснение без текста материалов. Коды выхода: 0 пройдено, 1 найдены проблемы, 4 отказ, 5 сбой. Ошибки валидатора прекращают проверку: сначала идёт общая проблема `CASE_INVALID` со списком кодов, затем каждая ошибка валидатора отдельной проблемой со своим кодом, файлом и пояснением. Если ошибок так много, что вывод вышел бы за предел `max_output_chars`, последней идёт проблема `VALIDATOR_ERRORS_NOT_SHOWN` с числом непоказанных ошибок: полный список даёт `tools/validate_project.py`. `--preliminary` допустим для `strategies` и `validation_plan`.
 
 | Код | Условие |
 |---|---|
