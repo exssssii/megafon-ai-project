@@ -546,3 +546,113 @@ class Timing(unittest.TestCase):
                 "time unreadable " + repr("c3-1\tbad"),
                 "time_total 210s",
             ])
+
+
+class SpentByReply(unittest.TestCase):
+    """The cost and the tokens in a log are totals of the whole chat so far, not of the reply."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.results = Path(tmp.name)
+
+    def log(self, name, *events):
+        (self.results / f"{name}.jsonl").write_text("\n".join(map(json.dumps, events)), encoding="utf-8")
+
+    def order(self, *names):
+        # The run order is the one of timing.tsv, not of the names: c1-5a comes before c1-5.
+        rows = [f"{name}\t2026-11-12T10:00:00Z\t2026-11-12T10:01:00Z\t60\texit 0" for name in names]
+        (self.results / "timing.tsv").write_text("\n".join(rows), encoding="utf-8")
+
+    def claude(self, name, chat, cost, model_cost=None, *calls):
+        assistant = {"type": "assistant", "message": {"content": [
+            {"type": "tool_use", "id": f"{name}-{i}", "name": tool, "input": given} for i, (tool, given) in enumerate(calls)]}}
+        result = {"type": "result", "session_id": chat, "total_cost_usd": cost,
+                  "modelUsage": {"m": {"costUSD": model_cost if model_cost is not None else cost}}}
+        self.log(name, assistant, result)
+
+    def codex(self, name, thread, tokens):
+        self.log(name, {"type": "thread.started", "thread_id": thread},
+                 {"type": "turn.completed", "usage": {"input_tokens": tokens, "cached_input_tokens": tokens // 2,
+                                                      "output_tokens": tokens // 100}})
+
+    def test_claude_code_two_chats_and_a_cut_off_reply(self):
+        self.claude("c1-1", "A", 1.0)
+        self.claude("c1-2", "A", 3.0)
+        self.claude("c1-3", "A", 3.5)
+        self.log("c2", {"type": "system", "subtype": "init", "session_id": "B"})
+        self.claude("c3-1", "C", 2.0)
+        self.claude("c3-2", "C", 2.25)
+        self.order("c1-1", "c1-2", "c1-3", "c2", "c3-1", "c3-2")
+        rows, sums, unknown = report.spent_by_reply(self.results)
+        self.assertEqual(rows, [("c1-1", {"usd": 1.0, "model:m": 1.0}), ("c1-2", {"usd": 2.0, "model:m": 2.0}),
+                                ("c1-3", {"usd": 0.5, "model:m": 0.5}), ("c2", None),
+                                ("c3-1", {"usd": 2.0, "model:m": 2.0}), ("c3-2", {"usd": 0.25, "model:m": 0.25})])
+        # The sum of the last totals of the chats: 3.5 + 2.25, not the sum of every total (12.75).
+        self.assertEqual((sums["usd"], unknown), (5.75, ["c2"]))
+        lines = report.usage_lines(self.results)
+        self.assertIn("spent c2 unknown", lines)
+        self.assertIn("spent_total usd=5.75 complete=False unknown=['c2']", lines)
+
+    def test_a_reply_is_taken_in_the_order_of_the_run(self):
+        self.claude("c1-5", "A", 5.0)
+        self.claude("c1-5a", "A", 4.0)
+        self.order("c1-5a", "c1-5")
+        rows, sums, _ = report.spent_by_reply(self.results)
+        self.assertEqual([(name, spent["usd"]) for name, spent in rows], [("c1-5a", 4.0), ("c1-5", 1.0)])
+        self.assertEqual(sums["usd"], 5.0)
+
+    def test_codex_two_threads_and_a_cut_off_reply(self):
+        self.codex("c1-1", "T1", 400)
+        self.codex("c1-2", "T1", 1000)
+        self.log("c2", {"type": "thread.started", "thread_id": "T2"}, {"type": "turn.started"})
+        self.codex("c3-1", "T3", 300)
+        self.codex("c3-2", "T3", 900)
+        self.order("c1-1", "c1-2", "c2", "c3-1", "c3-2")
+        rows, sums, unknown = report.spent_by_reply(self.results)
+        self.assertEqual([spent and spent["input_tokens"] for _, spent in rows], [400, 600, None, 300, 600])
+        self.assertEqual((sums["input_tokens"], unknown), (1900, ["c2"]))
+        self.assertIn("spent c1-2 input=600 cached_input=300 output=6", report.usage_lines(self.results))
+
+    def test_a_complete_run_is_marked_complete(self):
+        self.claude("c1-1", "A", 1.0)
+        self.assertIn("spent_total usd=1.0 complete=True unknown=[]", report.usage_lines(self.results))
+
+    def test_no_totals_at_all_is_none(self):
+        self.log("c1-1", {"type": "system"})
+        self.assertIn("spent_total none complete=False unknown=['c1-1']", report.usage_lines(self.results))
+
+    def test_cost_by_model_of_the_routing_line_is_the_sum_of_the_last_values(self):
+        self.claude("c1-1", "A", 1.0, 0.75)
+        self.claude("c1-2", "A", 3.0, 2.5)
+        self.order("c1-1", "c1-2")
+        self.assertEqual(report.spent_by_reply(self.results)[1]["model:m"], 2.5)
+
+    def test_work_counters_per_reply(self):
+        long_text = "x" * 40
+        self.log("c1-1",
+                 {"type": "assistant", "message": {"content": [
+                     {"type": "tool_use", "id": "t1", "name": "Read", "input": {"file_path": r"C:\run\clone\agent\contracts\README.md"}},
+                     {"type": "tool_use", "id": "t2", "name": "Bash", "input": {
+                         "command": "$PY tools/checkpoint.py action start projects/x && cat agent/workflows/a.md"}},
+                     {"type": "tool_use", "id": "t3", "name": "Read", "input": {"file_path": r"C:\run\clone\projects\x\brief.md"}}]}},
+                 {"type": "assistant", "message": {"content": [{"type": "tool_use", "id": "t1", "name": "Read", "input": {}}]}},
+                 {"type": "user", "message": {"content": [
+                     {"type": "tool_result", "tool_use_id": "t1", "content": long_text},
+                     {"type": "tool_result", "tool_use_id": "t2", "content": [{"type": "text", "text": "ab"}]},
+                     {"type": "tool_result", "tool_use_id": "t3", "content": long_text}]}})
+        self.log("c1-2",
+                 {"type": "item.completed", "item": {"type": "command_execution", "aggregated_output": "ab" * 5,
+                                                     "command": "pwsh -Command 'Get-Content agent/workflows/b.md'"}},
+                 {"type": "item.completed", "item": {"type": "command_execution", "aggregated_output": "zz",
+                                                     "command": "python tools/case.py usage projects/x; python tools/calc.py add"}},
+                 {"type": "item.completed", "item": {"type": "file_change", "changes": []}},
+                 {"type": "item.completed", "item": {"type": "agent_message", "text": "done"}})
+        self.order("c1-1", "c1-2")
+        lines = report.usage_lines(self.results)
+        # The Read of agent/ and the cat of agent/ are two reads; the output of the second is 2 bytes.
+        self.assertIn("work c1-1 actions=3 agent_reads=2 agent_bytes=42 utilities={'checkpoint.py action': 1}", lines)
+        self.assertIn("work c1-2 actions=3 agent_reads=1 agent_bytes=10"
+                      " utilities={'calc.py add': 1, 'case.py usage': 1}", lines)
+        self.assertIn("work_total actions=6 agent_reads=3 agent_bytes=52"
+                      " utilities={'calc.py add': 1, 'case.py usage': 1, 'checkpoint.py action': 1}", lines)

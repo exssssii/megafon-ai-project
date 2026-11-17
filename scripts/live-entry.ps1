@@ -318,31 +318,20 @@ New-Item -ItemType Directory -Force -Path $helpers | Out-Null
 $reporterFile = Join-Path $helpers 'live_report.py'
 Copy-Item -LiteralPath (Join-Path $repo 'scripts\live_report.py') -Destination $reporterFile
 
-# The figures of a run as the environment showed them. It is unclear whether the sum of a
-# resumed Claude Code session is cumulative, so both readings are given as a range.
+# The figures of a run as the environment showed them. The cost and the tokens in a log accumulate
+# inside a chat (session_id of Claude Code, thread_id of Codex): the sum of a run is the sum of the
+# last values of its chats, which live_report.py computes. A reply cut off is not in it.
 $usage = @'
-import json, pathlib, sys
-last, every, tokens_in, tokens_out = {}, 0.0, 0, 0
-for log in sorted(pathlib.Path(sys.argv[1]).glob("*.jsonl")):
-    for line in log.read_text(encoding="utf-8-sig", errors="replace").splitlines():
-        try:
-            event = json.loads(line)
-        except ValueError:
-            continue
-        if not isinstance(event, dict):
-            continue
-        if event.get("type") == "result" and isinstance(event.get("total_cost_usd"), (int, float)):
-            last[event.get("session_id")] = event["total_cost_usd"]
-            every += event["total_cost_usd"]
-        if event.get("type") == "turn.completed":
-            used = event.get("usage") or {}
-            tokens_in += used.get("input_tokens") or 0
-            tokens_out += used.get("output_tokens") or 0
-if last:
-    print(f"Среда показала расчётную стоимость по тарифу API, от {sum(last.values()):.2f} до {every:.2f} USD, без оборванного запуска. "
+import pathlib, sys
+sys.path.insert(0, str(pathlib.Path(__file__).parent))
+import live_report
+sums = live_report.spent_by_reply(pathlib.Path(sys.argv[1]))[1]
+if "usd" in sums:
+    print(f"Среда показала расчётную стоимость по тарифу API, {sums['usd']:.2f} USD, без оборванного запуска. "
           "Работаю по подписке, это не платёж.")
-elif tokens_in:
-    print(f"Среда показала {tokens_in} входных и {tokens_out} выходных токенов, без оборванного запуска. В деньгах расход неизвестен.")
+elif sums.get("input_tokens"):
+    print(f"Среда показала {int(sums['input_tokens'])} входных и {int(sums.get('output_tokens', 0))} выходных токенов, без оборванного запуска. "
+          "В деньгах расход неизвестен.")
 else:
     print("Показаний о расходе нет.")
 '@

@@ -398,8 +398,7 @@ def routing_lines(results: pathlib.Path, case: pathlib.Path, codex_home: pathlib
             if isinstance(entry, dict) and entry.get("phase") == "start"                     and str(entry.get("retry_reason") or "").startswith("role_check"):
                 retried += 1
     calls = with_model = 0
-    cost: dict[str, float] = {}
-    has_result = codex_events = False
+    codex_events = False
     for log in sorted(results.glob("*.jsonl")):
         for line in log.read_text(encoding="utf-8-sig", errors="replace").splitlines():
             try:
@@ -415,11 +414,6 @@ def routing_lines(results: pathlib.Path, case: pathlib.Path, codex_home: pathlib
                         if given.get("subagent_type") == "respondent":
                             calls += 1
                             with_model += bool(given.get("model"))
-            if event.get("type") == "result" and isinstance(event.get("modelUsage"), dict):
-                for model, usage in event["modelUsage"].items():
-                    if isinstance(usage, dict) and isinstance(usage.get("costUSD"), (int, float)):
-                        has_result = True
-                        cost[model] = cost.get(model, 0) + usage["costUSD"]
             codex_events = codex_events or (event.get("type") == "item.completed"
                                             and isinstance(event.get("item"), dict)
                                             and event["item"].get("type") == "collab_tool_call")
@@ -430,8 +424,154 @@ def routing_lines(results: pathlib.Path, case: pathlib.Path, codex_home: pathlib
             f" called_with_model={called}")
     if isinstance(called, int) and cheap > called:
         line += " flag=cheap_without_call"
-    shown = {m: round(v, 4) for m, v in cost.items()} if has_result else "unknown"
+    # The cost of a model accumulates inside a chat: the share of the run is the sum of the last values.
+    cost = {key[6:]: value for key, value in spent_by_reply(results)[1].items() if key.startswith("model:")}
+    shown = {m: round(v, 4) for m, v in cost.items()} or "unknown"
     return [f"{line} cost_by_model={shown}"]
+
+
+AGENT_PATH = re.compile(r"(?<![\w.-])agent[\\/]")
+READ_VERB = re.compile(r"\b(?:cat|Get-Content|gc|head|tail|sed|Select-String|rg|grep|ReadAllText)\b", re.IGNORECASE)
+UTILITY = re.compile(r"""tools[\\/]+([\w-]+\.py)(?:\s+([a-z][\w-]*)(?=[\s'"]|$))?""")
+
+
+class Figures(NamedTuple):
+    """What one reply (one log) shows: its chat, the totals of the chat so far, and the work done."""
+    chat: str | None
+    total: dict[str, float] | None
+    actions: int
+    agent_reads: int
+    agent_bytes: int
+    utilities: dict[str, int]
+
+
+def reply_figures(log: pathlib.Path) -> Figures:
+    """Figures of one reply. The cost and the tokens in the log are totals of the whole chat so far.
+
+    A chat is a session_id in Claude Code (the result event) and a thread_id in Codex (the
+    turn.completed event). A reply with no such event was cut off: its total is None.
+    An action is a tool call (a wait for a subagent of Codex is not one); an agent read is a call that reads a file of agent/.
+    """
+    chat = thread = total = None
+    actions = reads = size = 0
+    utilities: dict[str, int] = {}
+    reading: set[str] = set()
+    counted: set[str] = set()
+
+    def work(text: str, path: str | None = None) -> bool:
+        for name, sub in UTILITY.findall(text):
+            key = f"{name} {sub}".strip()
+            utilities[key] = utilities.get(key, 0) + 1
+        if path is not None:
+            return AGENT_PATH.search(normal(path)) is not None
+        return AGENT_PATH.search(text) is not None and READ_VERB.search(text) is not None
+
+    for line in log.read_text(encoding="utf-8-sig", errors="replace").splitlines():
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(event, dict):
+            continue
+        kind, item = event.get("type"), event.get("item")
+        for part in ((event.get("message") or {}).get("content") or []) if kind in ("assistant", "user") else []:
+            if not isinstance(part, dict):
+                continue
+            if part.get("type") == "tool_use" and part.get("id") not in counted:
+                counted.add(part.get("id"))
+                actions += 1
+                given = part.get("input") or {}
+                path = given.get("file_path") if part.get("name") == "Read" and isinstance(given.get("file_path"), str) else None
+                if work(given["command"] if isinstance(given.get("command"), str) else "", path):
+                    reads += 1
+                    reading.add(part.get("id"))
+            elif part.get("type") == "tool_result" and part.get("tool_use_id") in reading:
+                body = part.get("content")
+                if isinstance(body, list):
+                    body = "".join(x.get("text", "") for x in body if isinstance(x, dict))
+                size += len(str(body or "").encode("utf-8"))
+        if kind == "item.completed" and isinstance(item, dict) and item.get("type") not in ("agent_message", "reasoning", "collab_tool_call"):
+            actions += 1
+            if isinstance(item.get("command"), str) and work(item["command"]):
+                reads += 1
+                size += len(str(item.get("aggregated_output") or "").encode("utf-8"))
+        if kind == "thread.started":
+            thread = event.get("thread_id")
+        if kind == "result":
+            chat, total = event.get("session_id"), {}
+            if isinstance(event.get("total_cost_usd"), (int, float)):
+                total["usd"] = event["total_cost_usd"]
+            models = event.get("modelUsage") if isinstance(event.get("modelUsage"), dict) else {}
+            for model, usage in models.items():
+                if isinstance(usage, dict) and isinstance(usage.get("costUSD"), (int, float)):
+                    total[f"model:{model}"] = usage["costUSD"]
+            total = total or None
+        if kind == "turn.completed":
+            chat = thread
+            used = event.get("usage") or {}
+            total = {key: used[key] for key in ("input_tokens", "cached_input_tokens", "output_tokens")
+                     if isinstance(used.get(key), (int, float))} or None
+    return Figures(chat, total, actions, reads, size, utilities)
+
+
+def run_order(results: pathlib.Path) -> list[pathlib.Path]:
+    """Logs of the replies in the order the run made them: timing.tsv, then any others by name."""
+    logs = {path.stem: path for path in results.glob("*.jsonl")}
+    ordered = []
+    timing = results / "timing.tsv"
+    for row in (timing.read_text(encoding="utf-8-sig").splitlines() if timing.exists() else []):
+        name = row.split("\t")[0]
+        if name in logs:
+            ordered.append(logs.pop(name))
+    return ordered + [logs[name] for name in sorted(logs)]
+
+
+def spent_by_reply(results: pathlib.Path) -> tuple[list[tuple[str, dict[str, float] | None]], dict[str, float], list[str]]:
+    """What each reply spent: its total minus the previous total of the same chat, the sum, the unknown replies.
+
+    A reply that was cut off has no total: it is unknown, it is not in the sum, and the sum is
+    incomplete. The sum equals the sum of the last totals of the chats.
+    """
+    previous: dict[str | None, dict[str, float]] = {}
+    rows: list[tuple[str, dict[str, float] | None]] = []
+    sums: dict[str, float] = {}
+    unknown: list[str] = []
+    for log in run_order(results):
+        figures = reply_figures(log)
+        if figures.total is None:
+            rows.append((log.stem, None))
+            unknown.append(log.stem)
+            continue
+        before = previous.get(figures.chat, {})
+        spent = {key: value - before.get(key, 0) for key, value in figures.total.items()}
+        previous[figures.chat] = {**before, **figures.total}
+        rows.append((log.stem, spent))
+        for key, value in spent.items():
+            sums[key] = sums.get(key, 0) + value
+    return rows, sums, unknown
+
+
+def usage_lines(results: pathlib.Path) -> list[str]:
+    """Spent figures and work of each reply and their sums: what two versions are compared by."""
+    def show(figures: dict[str, float]) -> str:
+        return " ".join(f"{'usd' if key == 'usd' else key.removesuffix('_tokens')}="
+                        f"{round(value, 4) if key == 'usd' else int(value)}"
+                        for key, value in figures.items() if not key.startswith("model:"))
+    rows, sums, unknown = spent_by_reply(results)
+    lines = [f"spent {name} {show(spent) if spent else 'unknown'}" for name, spent in rows]
+    lines.append(f"spent_total {show(sums) or 'none'} complete={not unknown} unknown={unknown}")
+    total = [0, 0, 0]
+    tools: dict[str, int] = {}
+    for log in run_order(results):
+        figures = reply_figures(log)
+        lines.append(f"work {log.stem} actions={figures.actions} agent_reads={figures.agent_reads}"
+                     f" agent_bytes={figures.agent_bytes} utilities={dict(sorted(figures.utilities.items()))}")
+        total = [a + b for a, b in zip(total, figures[2:5])]
+        for key, count in figures.utilities.items():
+            tools[key] = tools.get(key, 0) + count
+    lines.append(f"work_total actions={total[0]} agent_reads={total[1]} agent_bytes={total[2]}"
+                 f" utilities={dict(sorted(tools.items()))}")
+    return lines
 
 
 def runtime_lines(case: pathlib.Path) -> list[str]:
@@ -621,6 +761,7 @@ def main() -> int:
         out.append("plain_chat True")
     read_logs(results, out)
     out.extend(timing_lines(results))
+    out.extend(usage_lines(results))
     if not args.plain:
         for case in sorted(p for p in projects.iterdir() if p.is_dir()):
             read_case(case, out)
