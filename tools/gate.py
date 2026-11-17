@@ -73,6 +73,8 @@ LINKED_SECTIONS = {
 OPTION_TEXT_FIELDS = ("title", "audience_task", "action", "benefit_mechanism", "economics", "reversibility",
                       "verification")
 OPTION_LIST_FIELDS = ("rejected_actions", "preconditions", "objections", "risks")
+GAPS_SECTION = "Чего не хватает"
+SUCCESS_SECTION = "Условие успеха и неуспеха"
 
 MONTHS = "января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря"
 NOT_QUANTITY_RE = re.compile(rf"\b\d{{4}}-\d{{2}}(?:-\d{{2}})?\b|\b\d{{1,2}}\.\d{{1,2}}\.\d{{2,4}}\b|\b\d{{1,2}}\.\d{{4}}\b"
@@ -303,6 +305,7 @@ class Gate:
         self.claims = [r for r in self.all_claims if is_active(r["id"], r)]
         self.calculations = [r for r in self.all_calculations if is_active(r["id"], r)]
         self.direction = self.active_decision("direction")
+        self.cost_rules = validator.cost_rules   # options_format: 2 in case.json
         self.texts: dict[str, list[str] | None] = {}
 
     def active_decision(self, topic):
@@ -483,6 +486,11 @@ class Gate:
                                f"the same action as {actions[action]}")
             actions.setdefault(action, option["id"])
             self.check_option_fields(option)
+            if self.cost_rules:
+                self.check_option_cost(option)
+                self.check_option_limit(option)
+        if self.cost_rules:
+            self.warn_about_cost()
         if self.direction is None:
             result.problem("PROPOSAL_MISSING", DECISION_REGISTRY, None, "no direction decision")
         lines = self.check_structure(OPTIONS, SECTIONS[OPTIONS])
@@ -496,6 +504,8 @@ class Gate:
                 result.problem("OPTIONS_TABLE", OPTIONS, option["id"], "the option is not in the comparison table")
         check_numbers(result, OPTIONS, list(enumerate(lines, 1)), self.index, user_said=self.user_said)
         self.check_synthetic_marks(OPTIONS, lines)
+        if self.cost_rules:
+            self.check_gaps_shown(sections)
 
     def check_option_fields(self, option):
         empty = [name for name in OPTION_TEXT_FIELDS if not option[name].strip()]
@@ -505,6 +515,107 @@ class Gate:
             self.result.problem("OPTION_FIELD_EMPTY", OPTION_REGISTRY, option["id"], ", ".join(empty))
         check_numbers(self.result, OPTION_REGISTRY, list(enumerate(option["economics"].splitlines(), 1)),
                       self.index, option["id"], option["basis"], self.user_said)
+
+    def is_computed(self, calc_id) -> bool:
+        record = self.index.get(calc_id)
+        return (isinstance(record, dict) and prefix_of(calc_id) == "CALC" and is_active(calc_id, record)
+                and record["result"]["status"] == "computed")
+
+    def check_option_cost(self, option):
+        result, cost = self.result, option.get("cost")
+        if not isinstance(cost, dict):
+            result.problem("OPTION_COST_MISSING", OPTION_REGISTRY, option["id"],
+                           "no cost: write cost as {status: estimated, calc_ids: [computed CALC], note}, "
+                           "{status: none, note} or {status: not_estimated, reason, question_id of a Q that "
+                           "is partial or blocked and has a gap}")
+            return
+        if cost["status"] == "estimated":
+            for calc_id in cost["calc_ids"]:
+                if not self.is_computed(calc_id):
+                    result.problem("OPTION_COST_UNFOUNDED", OPTION_REGISTRY, option["id"],
+                                   f"cost.calc_ids: {calc_id} is not a computed active calculation; list only "
+                                   "calculations with the status computed, or use not_estimated with a question")
+                elif calc_id not in option["basis"]:
+                    result.problem("OPTION_COST_UNFOUNDED", OPTION_REGISTRY, option["id"],
+                                   f"cost.calc_ids: {calc_id} is not in basis; add it to the basis of the option")
+        elif cost["status"] == "not_estimated":
+            question = self.index.get(cost["question_id"])
+            if not (isinstance(question, dict) and prefix_of(cost["question_id"]) == "Q"
+                    and is_active(cost["question_id"], question) and question["status"] in ("partial", "blocked")
+                    and isinstance(question["gap"], str) and question["gap"].strip()):
+                result.problem("OPTION_COST_GAP", OPTION_REGISTRY, option["id"],
+                               f"cost.question_id: {cost['question_id']} must be an active question with the "
+                               "status partial or blocked and a non-empty gap that names what is missing")
+
+    def check_option_limit(self, option):
+        result, limit, cost = self.result, option.get("limit_check"), option.get("cost")
+        if not isinstance(limit, dict):
+            result.problem("OPTION_LIMIT_MISSING", OPTION_REGISTRY, option["id"],
+                           "no limit_check: write limit_check as {brief_decision: the current brief decision "
+                           "or null if there is none, result: fits, exceeds, unknown or no_limit, calc_id for "
+                           "exceeds and for fits unless cost.status is none, note for unknown and no_limit}")
+            return
+        current = self.brief_decision_id()
+        if limit["brief_decision"] != current:
+            waiting = self.active_decision("brief")
+            if waiting is not None and waiting["status"] != "chosen":
+                note = (f"limit_check.brief_decision is {limit['brief_decision']}, and the brief decision "
+                        f"{waiting['id']} is not chosen yet (status {waiting['status']}): the change of the brief "
+                        "waits for the person's confirmation; leave the checks as they are for now and redo them "
+                        "against the new decision after the person confirms")
+            else:
+                note = (f"limit_check.brief_decision is {limit['brief_decision']}, the current chosen brief "
+                        f"decision is {current}: redo the check against it and write its ID in brief_decision")
+            result.problem("OPTION_LIMIT_STALE", OPTION_REGISTRY, option["id"], note)
+        if limit["result"] in ("fits", "exceeds"):
+            if isinstance(cost, dict) and cost["status"] == "not_estimated":
+                result.problem("OPTION_LIMIT_UNFOUNDED", OPTION_REGISTRY, option["id"],
+                               f"limit_check.result {limit['result']} needs a cost: cost.status is not_estimated, "
+                               "so the result must be unknown or no_limit")
+            elif limit["result"] == "exceeds" and isinstance(cost, dict) and cost["status"] == "none":
+                result.problem("OPTION_LIMIT_UNFOUNDED", OPTION_REGISTRY, option["id"],
+                               "limit_check.result exceeds needs a cost: cost.status is none, nothing can exceed "
+                               "the limit; use fits without calc_id")
+            elif "calc_id" not in limit:
+                if not (isinstance(cost, dict) and cost["status"] == "none"):
+                    result.problem("OPTION_LIMIT_UNFOUNDED", OPTION_REGISTRY, option["id"],
+                                   "limit_check.calc_id: fits without a calculation is only allowed when "
+                                   "cost.status is none; otherwise add the calc_id of the comparison")
+            elif not self.is_computed(limit["calc_id"]):
+                result.problem("OPTION_LIMIT_UNFOUNDED", OPTION_REGISTRY, option["id"],
+                               f"limit_check.calc_id: {limit['calc_id']} is not a computed active calculation; "
+                               f"{limit['result']} needs a computed comparison of the cost with the limit")
+            elif limit["calc_id"] not in option["basis"]:
+                result.problem("OPTION_LIMIT_UNFOUNDED", OPTION_REGISTRY, option["id"],
+                               f"limit_check.calc_id: {limit['calc_id']} is not in basis; add it to the basis "
+                               "of the option")
+
+    def brief_decision_id(self):
+        """ID of the active decision on the brief that the person has chosen; None when there is none."""
+        decision = self.active_decision("brief")
+        return decision["id"] if decision is not None and decision["status"] == "chosen" else None
+
+    def check_gaps_shown(self, sections):
+        shown = {ref for _, line in sections.get(GAPS_SECTION, []) for ref in references(line)}
+        for option in self.options:
+            cost = option.get("cost")
+            if isinstance(cost, dict) and cost["status"] == "not_estimated" and cost["question_id"] not in shown:
+                self.result.problem("OPTION_GAP_NOT_SHOWN", OPTIONS, option["id"],
+                                    f"cost.question_id {cost['question_id']} is not named in the section "
+                                    f"«{GAPS_SECTION}»: add [{cost['question_id']}] there")
+
+    def warn_about_cost(self):
+        develop = [o for o in self.options if o["strategy_kind"] == "develop"]
+        if develop and not any(isinstance(o.get("cost"), dict) and o["cost"]["status"] == "estimated"
+                               for o in develop):
+            self.result.warning("OPTIONS_COST_UNKNOWN", OPTION_REGISTRY, None,
+                                "no develop option has an estimated cost")
+        chosen = self.expected_option()
+        for option in self.options:
+            limit = option.get("limit_check")
+            if option["id"] == chosen and isinstance(limit, dict) and limit["result"] == "exceeds":
+                self.result.warning("CHOICE_EXCEEDS_LIMIT", OPTION_REGISTRY, option["id"],
+                                    "the proposed or chosen option exceeds the limit of the brief; say so to the person")
 
     def check_decision(self):
         if self.preliminary:
@@ -524,7 +635,16 @@ class Gate:
 
     def check_plan(self):
         self.check_output(PLAN, SECTIONS[PLAN])
+        if self.cost_rules:
+            self.check_threshold_basis()
         self.check_team()
+
+    def check_threshold_basis(self):
+        body = split_sections(self.lines_of(PLAN) or []).get(SUCCESS_SECTION, [])
+        if has_text(body) and not any(prefix_of(ref) in ("CALC", "Q") for _, line in body for ref in references(line)):
+            self.result.problem("THRESHOLD_BASIS_MISSING", PLAN, None,
+                                f"the section «{SUCCESS_SECTION}» has no link to a calculation of the spread of "
+                                "the indicator [CALC-…] or to the question about the missing periods [Q-…]")
 
     def check_done(self):
         result = self.result

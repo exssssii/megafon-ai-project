@@ -9,6 +9,7 @@
     "format_version": {"$ref": "urn:strategy-agent:contracts:common#/$defs/format_version"},
     "case_id": {"$ref": "urn:strategy-agent:contracts:common#/$defs/case_id"},
     "title": {"$ref": "urn:strategy-agent:contracts:common#/$defs/text"},
-    "created_at": {"$ref": "urn:strategy-agent:contracts:common#/$defs/datetime"}
+    "created_at": {"$ref": "urn:strategy-agent:contracts:common#/$defs/datetime"},
+    "options_format": {"const": 2}
   }
 }

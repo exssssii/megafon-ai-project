@@ -1,0 +1,63 @@
+{
+  "format_version": 1,
+  "id": "CKP-0002",
+  "case_id": "demo-case",
+  "created_at": "2026-11-05T12:30:00+03:00",
+  "seq": 2,
+  "previous": "CKP-0001",
+  "goal": "Выбрать направление для «Книжной полки» и подготовить две стратегии",
+  "stage": "strategies",
+  "artifacts": [
+    {
+      "path": "brief.md",
+      "sha256": "bb3290f9b5de51ec9d6848618ac6d077781cbd6775ae46f670a0a66d87db1164"
+    },
+    {
+      "path": "outputs/product-strategy.md",
+      "sha256": "b7fce5fab49bbfa8b8cedaa7fc83988eb9182e72c9d6c77b8dc529ae68ec02b5"
+    },
+    {
+      "path": "outputs/communication-strategy.md",
+      "sha256": "204069711901e7fc524b793b276e27f8ee20ef43aec3ed74f2beaae19abf9f21"
+    },
+    {
+      "path": "outputs/validation-plan.md",
+      "sha256": "7e30efe95d93155372ea6d9fdd256c82b9805aa2b9fccd3061505023ee9fc121"
+    }
+  ],
+  "completed_actions": [
+    "ACT-0001",
+    "ACT-0002",
+    "ACT-0003",
+    "ACT-0004",
+    "ACT-0006",
+    "ACT-0007",
+    "ACT-0008",
+    "ACT-0009",
+    "ACT-0010",
+    "ACT-0011",
+    "ACT-0012",
+    "ACT-0013",
+    "ACT-0014"
+  ],
+  "human_choices": [
+    "DEC-0001",
+    "DEC-0002",
+    "DEC-0003",
+    "DEC-0004",
+    "DEC-0005",
+    "DEC-0006"
+  ],
+  "open_items": [
+    "Проверить окупаемость пункта"
+  ],
+  "next_step": "Согласовать план проверки",
+  "totals": {
+    "elapsed_seconds": 268200,
+    "time_to_first_result_seconds": 600,
+    "human_active_seconds": null,
+    "cost": {
+      "basis": "unknown"
+    }
+  }
+}

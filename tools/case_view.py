@@ -39,6 +39,9 @@ ACTION_COLUMNS = ("Действие", "Ответственный", "Срок", 
 KIND_LABELS = {"fact": ("Факт", "fact"), "inference": ("Вывод", "inference"),
                "hypothesis": ("Гипотеза", "hypothesis"), "forecast": ("Прогноз", "forecast")}
 STRATEGY_KINDS = {"keep": "Сохранить", "close": "Закрыть", "develop": "Развивать"}
+COST_LABELS = {"estimated": "оценена", "none": "затрат нет", "not_estimated": "не оценена"}
+LIMIT_LABELS = {"fits": "укладывается", "exceeds": "не укладывается", "unknown": "неизвестно",
+                "no_limit": "в брифе нет ограничения"}
 BLOCKS = (("decision", "Решение"), ("numbers", "Ключевые числа"), ("team", "Команда и сроки"),
           ("options", "Варианты"), ("texts", "Стратегии и план"), ("basis", "Основания"),
           ("revisions", "Пересмотры"), ("reviews", "Независимая проверка"), ("accounting", "Учёт"))
@@ -454,6 +457,19 @@ class View:
                 cards.append(self.person_card(owner, None, mine))
         return intro + '<div class="grid grid-people">' + "".join(cards) + "</div>" if cards else ""
 
+    @staticmethod
+    def cost_texts(option: dict) -> tuple[str, str, str, str]:
+        """Labels and explanations of `cost` and `limit_check`; empty strings for a record of version 1."""
+        cost, limit = option.get("cost"), option.get("limit_check")
+        cost = cost if isinstance(cost, dict) else {}
+        limit = limit if isinstance(limit, dict) else {}
+        cost_label = COST_LABELS.get(cost.get("status"), "")
+        limit_label = LIMIT_LABELS.get(limit.get("result"), "")
+        cost_note = text_of(cost.get("note") or cost.get("reason"))
+        if cost.get("question_id"):
+            cost_note = f"{cost_note} ({text_of(cost['question_id'])})".strip()
+        return cost_label, cost_note, limit_label, text_of(limit.get("note"))
+
     def option_card(self, option: dict) -> str:
         rid = option["id"]
         chosen = self.direction and isinstance(self.direction.get("choice"), dict) \
@@ -470,6 +486,12 @@ class View:
         if objections:
             more = f' <span class="muted">и ещё {len(objections) - 1}</span>' if len(objections) > 1 else ""
             objection = f'<p class="objection"><span class="label">Главное возражение</span>{e(objections[0])}{more}</p>'
+        cost_label, cost_note, limit_label, limit_note = self.cost_texts(option)
+        cost_line = ""
+        if cost_label or limit_label:
+            parts = [f"Стоимость: {e(cost_label)}" if cost_label else "",
+                     f"Ограничение брифа: {e(limit_label)}" if limit_label else ""]
+            cost_line = f'<p class="cost-line">{" · ".join(part for part in parts if part)}</p>'
         fields = (("Аудитория и задача", "audience_task"), ("Действие", "action"),
                   ("От чего отказываемся", "rejected_actions"), ("Чем полезно", "benefit_mechanism"),
                   ("Экономика", "economics"), ("Условия", "preconditions"), ("Возражения", "objections"),
@@ -484,12 +506,15 @@ class View:
                 value = e(text_of(value))
             if value:
                 rows.append(f"<div><dt>{label}</dt><dd>{value}</dd></div>")
+        for label, status, note in (("Стоимость", cost_label, cost_note), ("Сверка с ограничением", limit_label, limit_note)):
+            if status:
+                rows.append(f"<div><dt>{label}</dt><dd>{e(status)}{': ' + e(note) if note else ''}</dd></div>")
         basis = [self.footnote(i) or e(i) for i in option.get("basis", []) if isinstance(i, str)]
         if basis:
             rows.append(f'<div><dt>Основания</dt><dd>{" ".join(basis)}</dd></div>')
         return (f'<article class="card option{" option-chosen" if chosen else ""}" id="option-{rid}">'
                 f'<p class="badges">{"".join(badges)}</p><h3>{e(text_of(option.get("title")))}</h3>'
-                f'<p>{e(text_of(option.get("action")))}</p>{objection}'
+                f'<p>{e(text_of(option.get("action")))}</p>{cost_line}{objection}'
                 f'<details><summary>Все поля</summary><dl class="fields">{"".join(rows)}</dl></details></article>')
 
     def block_options(self) -> str:
@@ -774,6 +799,7 @@ details{margin:.5rem 0}
 summary{cursor:pointer;color:var(--accent);font-size:.92rem}
 .doc{margin:0 0 10px;padding:12px 18px}
 .doc>summary{font-size:1.02rem;font-weight:600;color:var(--text)}
+.cost-line{margin:.3rem 0;color:var(--muted);font-size:.9rem}
 .fields{margin:.6rem 0 0}
 .fields div{padding:6px 0;border-top:1px solid var(--border)}
 .fields dt{font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}

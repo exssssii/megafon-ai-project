@@ -61,6 +61,11 @@ REGISTRIES = {
     "decisions/decisions.json": ("registry-decisions", "DEC"),
 }
 REGISTRY_FILE = {prefix: rel for rel, (_, prefix) in REGISTRIES.items()}
+OPTIONS_FILE = REGISTRY_FILE["OPT"]
+# `options_format: 2` in case.json switches on `cost` and `limit_check` of an option and the gate checks of E19.
+# A case without the marker (every old one) is judged as before. Registries stay at format_version 1.
+OPTIONS_FORMAT = 2
+COST_FIELDS = ("cost", "limit_check")
 JOURNAL = "state/actions.jsonl"
 # Clocks of two machines differ a little; a case moved between them must stay valid.
 CLOCK_TOLERANCE = timedelta(minutes=5)
@@ -313,6 +318,7 @@ class Validator:
         self.extractions: dict[str, list[dict] | None] = {}   # SRC ID -> blocks, None when unusable
         self.case_id = root.name
         self.case_document = None
+        self.cost_rules = False                 # case.json carries options_format: 2
 
     # --- findings -------------------------------------------------------
 
@@ -444,6 +450,7 @@ class Validator:
         return True
 
     def check_schemas(self, case, raw):
+        self.cost_rules = isinstance(case, dict) and case.get("options_format") == OPTIONS_FORMAT
         if case is not None:
             for _, note in schema_notes(self.schemas["case"], case):
                 self.error("SCHEMA", "case.json", None, note)
@@ -459,6 +466,12 @@ class Validator:
     def read_registry(self, rel, schema_name, prefix, document):
         notes = schema_notes(self.schemas[schema_name], document)
         records = document.get("records") if isinstance(document, dict) else None
+        if rel == OPTIONS_FILE and not self.cost_rules and isinstance(records, list):
+            # The schema allows the fields; without the marker in case.json they are not part of the case format.
+            for index, record in enumerate(records):
+                if isinstance(record, dict) and any(name in record for name in COST_FIELDS):
+                    notes.append((("records", index), "additionalProperties violated at records (cost fields need "
+                                                      "options_format 2 in case.json)"))
         bad = set()
         for path, note in notes:
             index = path[1] if len(path) > 1 and path[0] == "records" and isinstance(path[1], int) else None
@@ -824,6 +837,7 @@ class Validator:
             self.check_reason(file, option)
             if not is_active(option["id"], option):
                 continue
+            self.check_option_links(file, option)
             for basis_id in option["basis"]:
                 self.ref(basis_id, {"CLM", "CALC"}, file, option["id"])
                 if self.revoked(basis_id):
@@ -833,6 +847,25 @@ class Validator:
                 self.warn("BASIS_UNCONFIRMED", file, option["id"], "option has no basis")
             elif weak:
                 self.warn("BASIS_UNCONFIRMED", file, option["id"], f"basis is not confirmed: {', '.join(weak)}")
+
+    def check_option_links(self, file, option):
+        """References inside `cost` and `limit_check` (case.json carries options_format: 2)."""
+        links = []
+        cost, limit = option.get("cost"), option.get("limit_check")
+        if isinstance(cost, dict):
+            links += [(ref, {"CALC"}) for ref in cost.get("calc_ids", [])]
+            if "question_id" in cost:
+                links.append((cost["question_id"], {"Q"}))
+        if isinstance(limit, dict):
+            if limit.get("brief_decision") is not None:
+                links.append((limit["brief_decision"], {"DEC"}))
+            if "calc_id" in limit:
+                links.append((limit["calc_id"], {"CALC"}))
+        for ref_id, types in links:
+            self.ref(ref_id, types, file, option["id"])
+            # A superseded brief decision is not an error here: it is a stale check, which the gate reports.
+            if types != {"DEC"} and self.revoked(ref_id):
+                self.error("WITHDRAWN_USED", file, option["id"], f"cost or limit_check uses withdrawn {ref_id}")
 
     # --- decisions ------------------------------------------------------
 

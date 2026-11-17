@@ -61,6 +61,14 @@ class NewCase(ToolTestCase):
         self.assertEqual(document["title"], "Почему падает удержание")
         self.assertIsNotNone(datetime.fromisoformat(document["created_at"]).utcoffset())
 
+    def test_new_marks_the_case_for_option_cost_and_leaves_the_options_registry_out(self):
+        self.new({"case_id": "a", "title": "Т"})
+        folder = self.projects / "a"
+        document = json.loads((folder / "case.json").read_text(encoding="utf-8"))
+        self.assertEqual((document["format_version"], document["options_format"]), (1, 2))
+        self.assertFalse((folder / "decisions").exists())
+        self.assertEqual(vp.validate_case(folder).errors, [])
+
     def test_new_accepts_request_with_bom(self):
         raw = b"\xef\xbb\xbf" + json.dumps({"case_id": "a", "title": "Т"}, ensure_ascii=False).encode("utf-8")
         code, _ = self.run_tool("new", "--from", self.request(None, raw))
@@ -288,6 +296,22 @@ class RecordsByNumber(ToolTestCase):
                 self.assertTrue(all(len(json.dumps(row, ensure_ascii=False)) < 400 for row in rows))
                 if count is not None:
                     self.assertEqual(len(rows), count)
+
+    def test_list_of_options_shows_cost_status_and_limit_result_when_they_are_recorded(self):
+        _, _, lines = self.run_lines("list", self.case, "options")
+        self.assertTrue(all("cost" not in json.loads(line) and "limit" not in json.loads(line) for line in lines[1:]))
+        path = self.case / "decisions" / "options.json"
+        document = json.loads(path.read_text(encoding="utf-8"))
+        document["records"][0]["cost"] = {"status": "none", "note": "Затрат нет"}
+        document["records"][0]["limit_check"] = {"brief_decision": None, "result": "no_limit", "note": "Бриф молчит"}
+        document["records"][1]["cost"] = {"status": "not_estimated", "reason": "Нет цены", "question_id": "Q-0002"}
+        path.write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
+        _, _, lines = self.run_lines("list", self.case, "options")
+        rows = [json.loads(line) for line in lines[1:]]
+        self.assertEqual([(r.get("cost"), r.get("limit")) for r in rows],
+                         [("none", "no_limit"), ("not_estimated", None), (None, None)])
+        _, _, lines = self.run_lines("show", self.case, "OPT-0001")
+        self.assertEqual(json.loads(lines[1])["cost"]["status"], "none")
 
     def test_list_of_calculations_shows_value_with_unit_and_status(self):
         _, _, lines = self.run_lines("list", self.case, "calculations")

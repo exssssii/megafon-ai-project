@@ -615,7 +615,9 @@ class Graph:
         for record in case.load(QUESTIONS_FILE)["records"]:
             self.add_record(record, ids_in(record.get("findings") if isinstance(record, dict) else None))
         for record in case.load(OPTIONS_FILE)["records"]:
-            self.add_record(record, ids_in(record.get("basis") if isinstance(record, dict) else None))
+            cost = record.get("cost") if isinstance(record, dict) else None
+            gap = [cost.get("question_id")] if isinstance(cost, dict) else []  # the question behind an unestimated cost
+            self.add_record(record, ids_in(record.get("basis") if isinstance(record, dict) else None) + ids_in(gap))
         for record in case.load(DECISIONS_FILE)["records"]:
             parts = [record.get("proposal"), record.get("choice")] if isinstance(record, dict) else []
             self.add_record(record, [part.get("option_id") for part in parts if isinstance(part, dict)])

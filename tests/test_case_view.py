@@ -161,6 +161,26 @@ class DemoPageTest(CaseViewTest):
         self.assertIn("рекомендовал агент", text)
         self.assertIn("<details", text)
 
+    def test_options_block_shows_cost_and_limit_check_when_recorded(self):
+        self.assertNotIn("cost-line", block_of(self.build(), "options"))
+
+        def change(records):
+            records[0]["cost"] = {"status": "none", "note": "Затрат нет <b>совсем</b>"}
+            records[0]["limit_check"] = {"brief_decision": None, "result": "no_limit", "note": "Бриф ограничений не называет"}
+            records[1]["cost"] = {"status": "not_estimated", "reason": "Нет цены пункта", "question_id": "Q-0002"}
+            records[1]["limit_check"] = {"brief_decision": None, "result": "unknown", "note": "Нечего сравнивать"}
+            records[2]["cost"] = {"status": "estimated", "calc_ids": ["CALC-0001"], "note": "Учтён объём заявок"}
+            records[2]["limit_check"] = {"brief_decision": None, "result": "exceeds", "calc_id": "CALC-0001"}
+        self.edit_registry("decisions/options.json", change)
+        text = block_of(self.build(), "options")
+        for shown in ("Стоимость: затрат нет", "Стоимость: не оценена", "Стоимость: оценена",
+                      "Ограничение брифа: не укладывается", "Ограничение брифа: в брифе нет ограничения",
+                      "Ограничение брифа: неизвестно", "Нет цены пункта", "Учтён объём заявок",
+                      "Бриф ограничений не называет"):
+            self.assertIn(shown, text)
+        self.assertNotIn("<b>совсем</b>", text)
+        self.assertIn("&lt;b&gt;совсем&lt;/b&gt;", text)
+
 
 class SafetyTest(CaseViewTest):
     def test_script_in_claim_is_text(self):

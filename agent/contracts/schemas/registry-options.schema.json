@@ -40,8 +40,74 @@
         "risks": {"$ref": "urn:strategy-agent:contracts:common#/$defs/text_list"},
         "reversibility": {"$ref": "urn:strategy-agent:contracts:common#/$defs/text"},
         "verification": {"$ref": "urn:strategy-agent:contracts:common#/$defs/text"},
-        "basis": {"$ref": "urn:strategy-agent:contracts:common#/$defs/id_list"}
+        "basis": {"$ref": "urn:strategy-agent:contracts:common#/$defs/id_list"},
+        "cost": {"$ref": "#/$defs/cost"},
+        "limit_check": {"$ref": "#/$defs/limit_check"}
       }
+    },
+    "calc_list": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "urn:strategy-agent:contracts:common#/$defs/calc_id"}
+    },
+    "cost": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "calc_ids", "note"],
+          "properties": {
+            "status": {"const": "estimated"},
+            "calc_ids": {"$ref": "#/$defs/calc_list"},
+            "note": {"$ref": "urn:strategy-agent:contracts:common#/$defs/text"}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "note"],
+          "properties": {
+            "status": {"const": "none"},
+            "note": {"$ref": "urn:strategy-agent:contracts:common#/$defs/text"}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "reason", "question_id"],
+          "properties": {
+            "status": {"const": "not_estimated"},
+            "reason": {"$ref": "urn:strategy-agent:contracts:common#/$defs/text"},
+            "question_id": {"$ref": "urn:strategy-agent:contracts:common#/$defs/q_id"}
+          }
+        }
+      ]
+    },
+    "limit_check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["brief_decision", "result"],
+      "properties": {
+        "brief_decision": {
+          "oneOf": [
+            {"$ref": "urn:strategy-agent:contracts:common#/$defs/dec_id"},
+            {"type": "null"}
+          ]
+        },
+        "result": {"enum": ["fits", "exceeds", "unknown", "no_limit"]},
+        "calc_id": {"$ref": "urn:strategy-agent:contracts:common#/$defs/calc_id"},
+        "note": {"$ref": "urn:strategy-agent:contracts:common#/$defs/text"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"result": {"const": "exceeds"}}},
+          "then": {"required": ["calc_id"]}
+        },
+        {
+          "if": {"properties": {"result": {"enum": ["unknown", "no_limit"]}}},
+          "then": {"required": ["note"], "not": {"required": ["calc_id"]}}
+        }
+      ]
     }
   }
 }

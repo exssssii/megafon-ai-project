@@ -1,7 +1,7 @@
 """Create a case folder and report how much of the research budget is used.
 
 Commands (run from the repository root):
-  new --from <file>      create projects/<case_id>/ with case.json
+  new --from <file>      create projects/<case_id>/ with case.json (it carries options_format: 2)
   usage <case folder>    count searches, page reads and active sources against the brief (reads only)
   show <case folder> <ID>... [--from <char>]  print registry records by number, one JSON per line;
                          a record longer than the output limit goes alone in parts, `next` gives --from (reads only)
@@ -31,6 +31,8 @@ PROJECTS = Path(__file__).resolve().parent.parent / "projects"
 CASE_ID_RE = re.compile(r"[a-z0-9]+(-[a-z0-9]+)*")
 REQUEST_KEYS = {"case_id", "title"}
 FORMAT_VERSION = 1
+# A new case carries `options_format: 2` in case.json: its options hold `cost` and `limit_check`.
+OPTIONS_FORMAT = 2
 MAX_CASE_ID = 64
 # registry name -> (ID prefix, file in the case); the names are those of the case folder contract
 REGISTRIES = {
@@ -68,7 +70,8 @@ def cmd_new(args) -> int:
         folder.mkdir()
     except FileExistsError:
         raise Refused("case_exists", "папка с таким case_id уже есть", case_id=case_id) from None
-    document = {"format_version": FORMAT_VERSION, "case_id": case_id, "title": title, "created_at": now()}
+    document = {"format_version": FORMAT_VERSION, "case_id": case_id, "title": title, "created_at": now(),
+                "options_format": OPTIONS_FORMAT}
     draft = folder / ".case.json.tmp"
     try:
         draft.write_text(json.dumps(document, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -142,6 +145,11 @@ def summary(name: str, record: dict) -> dict:
         row |= {"name": short(record.get("question")), "status": "withdrawn" if withdrawn else record.get("status")}
     elif name == "options":
         row |= {"name": short(record.get("title")), "status": record.get("record_status")}
+        cost, limit = record.get("cost"), record.get("limit_check")
+        if isinstance(cost, dict):
+            row["cost"] = cost.get("status")
+        if isinstance(limit, dict):
+            row["limit"] = limit.get("result")
     else:
         row |= {"name": short(record.get("topic")), "status": record.get("status")}
     return row
