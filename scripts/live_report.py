@@ -193,6 +193,28 @@ def internal_words(text: str) -> list[str]:
     return sorted({match.group(0).lower() for match in INTERNAL.finditer(text)})
 
 
+# A line that states a threshold of the validation plan: success or failure with a number.
+THRESHOLD = re.compile(r"(?<!\w)(?:не)?успех\w*(?!\w).*\d", re.IGNORECASE)
+
+
+def threshold_lines(text: str) -> int:
+    """Lines of a reply that name a success or failure threshold with a number."""
+    return sum(1 for line in text.splitlines() if THRESHOLD.search(line))
+
+
+def shown_text(event) -> str:
+    """Text the user sees from one event: a Codex agent message or the top-level Claude Code text."""
+    if not isinstance(event, dict):
+        return ""
+    item = event.get("item")
+    if isinstance(item, dict) and item.get("type") == "agent_message" and event.get("type") == "item.completed":
+        return item.get("text") or ""
+    if event.get("type") == "assistant" and not event.get("parent_tool_use_id"):
+        parts = (event.get("message") or {}).get("content") or []
+        return "\n".join(p.get("text") or "" for p in parts if isinstance(p, dict) and p.get("type") == "text")
+    return ""
+
+
 def user_plugins(plugins) -> list[str]:
     """Plugins of the init event that do not ship with the environment itself."""
     names = []
@@ -691,11 +713,14 @@ def read_logs(results: pathlib.Path, out: list[str]) -> None:
             traces += 1
             contexts.append(f"  {log.stem}: {text[max(0, match.start() - 70):match.end() + 40]!r}")
         final = ""
+        shown = []
         for line in text.splitlines():
             try:
                 event = json.loads(line)
             except ValueError:
                 continue
+            if shown_text(event).strip():
+                shown.append(shown_text(event).strip())
             item = event.get("item") if isinstance(event, dict) else None
             if isinstance(item, dict) and item.get("type") == "agent_message" and event.get("type") == "item.completed":
                 final = item.get("text") or ""
@@ -708,9 +733,12 @@ def read_logs(results: pathlib.Path, out: list[str]) -> None:
                 seen = skills_of(event)
             called += skill_calls(event)
         log.with_suffix(".final.txt").write_text(final, encoding="utf-8")
+        # Everything the user saw during the reply: the final answer alone can miss what was said on the way.
+        log.with_suffix(".messages.txt").write_text("\n\n---\n\n".join(shown), encoding="utf-8")
         first = final.splitlines()[0].strip() if final else ""
         out.append(f"{log.stem}: mode_line={first == 'Режим: продукт.'} status_block={'Этап:' in final and 'Жду от вас:' in final}"
-                   f" internal_words={internal_words(final)}")
+                   f" internal_words={internal_words(final)} messages={len(shown)}"
+                   f" threshold_lines={threshold_lines(chr(10).join(shown) or final)}")
     out.append(f"init skills, mcp, plugins: {init}")
     out.append(f"user_plugins {extra}")
     out.append(skill_line(results, seen, called))

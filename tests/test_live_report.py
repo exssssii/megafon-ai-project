@@ -318,6 +318,36 @@ class RunHygiene(unittest.TestCase):
         self.assertEqual(report.internal_words("Отток одиночек 6,27 % за январь–сентябрь."), [])
         self.assertEqual(report.internal_words("Ваш выбор DEC-0005 записан, расчёт CALC-0012."), ["calc-0012", "dec-0005"])
 
+    def test_threshold_lines_count_success_and_failure_with_a_number(self):
+        text = ("**Предложенные пороги**\n- **Успех:** отток не выше 4,5%.\n- **Неуспех:** отток не ниже 5,5%.\n"
+                "| Технический успех | Снижение минимум на 30% |\nПлан проверки написан.\nУспешно сохранено.")
+        self.assertEqual(report.threshold_lines(text), 3)
+        self.assertEqual(report.threshold_lines("План проверки написан, пороги покажу вместе с ответственными."), 0)
+        self.assertEqual(report.threshold_lines("Успех без числа пока не назван."), 0)
+
+    def test_shown_text_takes_every_message_the_user_sees(self):
+        codex = {"type": "item.completed", "item": {"type": "agent_message", "text": "Вы выбрали «только надёжность»."}}
+        claude = {"type": "assistant", "message": {"content": [{"type": "text", "text": "Цель"},
+                                                               {"type": "tool_use", "name": "Bash"},
+                                                               {"type": "text", "text": "выбор"}]}}
+        sub = dict(claude, parent_tool_use_id="toolu_1")
+        self.assertEqual(report.shown_text(codex), "Вы выбрали «только надёжность».")
+        self.assertEqual(report.shown_text(claude), "Цель\nвыбор")
+        self.assertEqual(report.shown_text(sub), "")
+        self.assertEqual(report.shown_text({"type": "item.completed", "item": {"type": "reasoning", "text": "x"}}), "")
+
+    def test_messages_file_keeps_what_came_before_the_final_answer(self):
+        with tempfile.TemporaryDirectory() as folder:
+            log = Path(folder) / "c3-1.jsonl"
+            events = [{"type": "item.completed", "item": {"type": "agent_message", "text": "Вы выбрали «только надёжность»."}},
+                      {"type": "item.completed", "item": {"type": "agent_message", "text": "Кейс доведён до согласования."}}]
+            log.write_text("\n".join(json.dumps(e, ensure_ascii=False) for e in events), encoding="utf-8")
+            out = []
+            report.read_logs(Path(folder), out)
+            self.assertEqual((Path(folder) / "c3-1.final.txt").read_text(encoding="utf-8"), "Кейс доведён до согласования.")
+            self.assertIn("только надёжность", (Path(folder) / "c3-1.messages.txt").read_text(encoding="utf-8"))
+            self.assertIn("messages=2 threshold_lines=0", out[0])
+
     def test_plugins_that_ship_with_the_environment_are_not_the_user_s(self):
         plugins = [{"name": "cc-plugin-telemetry", "path": "builtin", "source": "cc-plugin-telemetry@builtin"},
                    {"name": "superpowers", "path": "C:/cache/superpowers", "source": "superpowers@market"}, "loose"]
