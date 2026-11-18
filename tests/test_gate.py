@@ -385,6 +385,31 @@ class Team(Base):
         self.owner("Анна К.")
         self.assertIn("TEAM_FORMAT", self.team_codes()[0])
 
+    def roster_changed(self, at):
+        """A later human action names a new team, as after «вместо Анны Олег»."""
+        journal = self.case / "state" / "actions.jsonl"
+        lines = [json.loads(line) for line in journal.read_text(encoding="utf-8").splitlines()]
+        start = next(line for line in lines if line["id"] == "ACT-0004" and line["phase"] == "start")
+        end = next(line for line in lines if line["id"] == "ACT-0004" and line["phase"] == "end")
+        lines.append(start | {"id": "ACT-0050", "at": at})
+        lines.append(end | {"id": "ACT-0050", "at": at, "result_refs": []})
+        self.not_a_choice(lines[-1])
+        journal.write_text("".join(json.dumps(line, ensure_ascii=False) + "\n" for line in lines), encoding="utf-8")
+        self.team(TEAM_HEAD.replace("ACT-0004", "ACT-0050") + ROSTER)
+        self.owner("Анна К.")
+
+    def test_roster_changed_after_consent_needs_new_consent(self):
+        self.roster_changed("2026-11-04T09:00:00+03:00")
+        self.assertIn("COMMITMENTS_PENDING", self.codes("done"))
+        self.add_approval("commitments", "DEC-0009", "ACT-0051", at="2026-11-04T10:00:00+03:00",
+                          supersedes="DEC-0004")
+        self.replace("outputs/commitments.md", "[DEC-0004]", "[DEC-0009]")
+        self.assertNotIn("COMMITMENTS_PENDING", self.codes("done"))
+
+    def test_roster_named_before_consent_keeps_it(self):
+        self.roster_changed("2026-11-03T11:00:00+03:00")
+        self.assertNotIn("COMMITMENTS_PENDING", self.codes("done"))
+
     def test_malformed_table_is_only_a_format_problem(self):
         self.team(TEAM_HEAD + "| Имя | Должность |\n|---|---|\n| Анна К. | аналитик |\n")
         self.assertEqual(self.team_codes(), ({"TEAM_FORMAT"}, set()))

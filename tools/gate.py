@@ -708,6 +708,9 @@ class Gate:
         elif self.is_before_direction(decision):
             result.problem("COMMITMENTS_PENDING", DECISION_REGISTRY, decision["id"],
                            "the commitments were agreed before the current choice of direction")
+        elif self.is_before_team(decision):
+            result.problem("COMMITMENTS_PENDING", DECISION_REGISTRY, decision["id"],
+                           "the commitments were agreed before the current team in team.md")
         elif lines is not None and not any(decision["id"] in references(line) for _, line
                                            in split_sections(lines).get(APPROVAL_SECTION, [])):
             result.problem("COMMITMENTS_NOT_CITED", COMMITMENTS, decision["id"],
@@ -804,6 +807,20 @@ class Gate:
             return False
         return (datetime.fromisoformat(thresholds["choice"]["chosen_at"])
                 < datetime.fromisoformat(choice["chosen_at"]))
+
+    def is_before_team(self, decision) -> bool:
+        """A roster written after the consent: the agent had to ask for the commitments again."""
+        roster = read_team(self.root)
+        if roster is None or roster.action_id is None:
+            return False
+        choice = decision.get("choice") or {}
+        if roster.action_id == choice.get("action_id") or not choice.get("chosen_at"):
+            return False
+        action = self.index.get(roster.action_id)
+        end = action.get("end") if isinstance(action, dict) else None
+        if not isinstance(end, dict) or not end.get("at"):
+            return False
+        return datetime.fromisoformat(choice["chosen_at"]) < datetime.fromisoformat(end["at"])
 
     def check_structure(self, file, required):
         """Existence and sections; returns the lines, or None when the file is missing."""
