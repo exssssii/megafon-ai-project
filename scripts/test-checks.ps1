@@ -167,5 +167,40 @@ Assert-Test 'actual local pushes enforce main destination for normal, forced, de
     }
     if ((Invoke-FixtureGit $bare @('rev-parse', 'refs/heads/main')) -ne $sha) { throw 'Main changed' }
 }
+function Check-Live-Refusal([string[]] $Arguments, [string] $Diagnostic) {
+    # The brief is checked before any clone or model: a refusal here costs nothing.
+    Push-Location -LiteralPath $repo
+    try { $output = & pwsh -NoProfile -File (Join-Path $repo 'scripts/live-entry.ps1') @Arguments -DryRun -Work (Join-Path $run 'live-refusal') 2>&1 }
+    finally { Pop-Location }
+    if ($LASTEXITCODE -eq 0) { throw 'The live run script accepted the arguments' }
+    if (($output -join "`n") -notmatch $Diagnostic) { throw "Missing diagnostic '$Diagnostic': $output" }
+}
+Assert-Test 'live run of family-connect refuses to start without -Brief' {
+    Check-Live-Refusal @('-Suite', 'hard', '-Case', 'family-connect') 'needs -Brief'
+}
+Assert-Test 'live run of family-connect refuses a brief that does not exist' {
+    Check-Live-Refusal @('-Suite', 'hard', '-Case', 'family-connect', '-Brief', (Join-Path $run 'absent-brief.pdf')) 'brief was not found'
+}
+Assert-Test 'live run of family-connect refuses a brief that is not a PDF' {
+    $text = Join-Path $run 'brief.txt'
+    Write-File $text "generated`n"
+    Check-Live-Refusal @('-Suite', 'hard', '-Case', 'family-connect', '-Brief', $text) 'must be a PDF'
+}
+Assert-Test 'live run of family-connect refuses a brief inside the repository' {
+    $inside = Join-Path $repo '.work/test-brief-inside.pdf'
+    Write-File $inside "%PDF-generated`n"
+    try { Check-Live-Refusal @('-Suite', 'hard', '-Case', 'family-connect', '-Brief', $inside) 'inside the repository' }
+    finally { Remove-Item -LiteralPath $inside -Force -ErrorAction SilentlyContinue }
+}
+Assert-Test 'live run takes -Brief only for family-connect' {
+    $pdf = Join-Path $run 'other.pdf'
+    Write-File $pdf "%PDF-generated`n"
+    Check-Live-Refusal @('-Suite', 'hard', '-Case', 'direction-b2c', '-Brief', $pdf) 'Only the case family-connect takes -Brief'
+}
+Assert-Test 'live run of family-connect refuses suites other than hard' {
+    $pdf = Join-Path $run 'other.pdf'
+    Write-File $pdf "%PDF-generated`n"
+    Check-Live-Refusal @('-Suite', 'e2e', '-Case', 'family-connect', '-Brief', $pdf) 'only in the suite hard'
+}
 Write-Host "Tests: $passed passed, $failed failed. Fixtures: $run"
 if ($failed) { exit 1 }

@@ -15,6 +15,9 @@
 # not count for acceptance.
 # The short suites research (the first three replies of hard: the research, its numbers and the
 # first options) and resume (finish without the failures) check a fix in minutes; they do not count either.
+# The case family-connect (E20, the suite hard only) runs on a brief the repository does not hold: -Brief takes the path
+# to its PDF outside the repository. The file goes to the inbox of the clone as brief.pdf and never into the archives
+# of the results or of the transfer; a copy of it that the agent made in the case folder is removed from them.
 # -DryRun checks the clone, the stripping, the failures and the archives without any model.
 # Project skills (E14) are on and the skills built into the CLI are off, so a run sees exactly the
 # skills of .claude/skills or .agents/skills; -NoSkills turns the project skills off too, for the
@@ -40,7 +43,8 @@ param(
     [ValidateSet('codex', 'claude')] [string] $Environment = 'codex',
     [ValidateSet('entry', 'strategy', 'e2e', 'continue', 'hard', 'faults', 'finish', 'interviews', 'research', 'resume', 'revise', 'team')] [string] $Suite = 'entry',
     [ValidateSet('asked', 'named', 'none')] [string] $Team = 'asked',
-    [ValidateSet('retention-smb', 'direction-b2c')] [string] $Case = 'retention-smb',
+    [ValidateSet('retention-smb', 'direction-b2c', 'family-connect')] [string] $Case = 'retention-smb',
+    [string] $Brief = '',
     [string] $Codex = '',
     [string] $Model = '',
     [string] $Effort = 'medium',
@@ -61,6 +65,24 @@ $env:PYTHONIOENCODING = 'utf-8'
 $env:PYTHONUTF8 = '1'
 
 $repo = (Get-Location).Path
+# The brief of family-connect is not in the repository: the user hands it over as a PDF outside it. It goes to
+# the inbox of the clone only, never into the archive of the results. Checked first, before any clone is made.
+$briefHash = ''
+$briefSize = 0
+if ($Case -eq 'family-connect') {
+    if ($Suite -ne 'hard') { throw 'The case family-connect runs only in the suite hard' }
+    if ($PlainChat) { throw 'The case family-connect has no plain chat variant' }
+    if (-not $Brief) { throw 'The case family-connect needs -Brief with the path to the PDF of the brief, kept outside the repository' }
+    if (-not (Test-Path -LiteralPath $Brief -PathType Leaf)) { throw "The brief was not found: $Brief" }
+    $Brief = (Resolve-Path -LiteralPath $Brief).Path
+    if ([IO.Path]::GetExtension($Brief) -ne '.pdf') { throw "The brief must be a PDF file: $Brief" }
+    if ("$Brief".StartsWith("$repo\", [StringComparison]::OrdinalIgnoreCase)) { throw "The brief lies inside the repository: $Brief. Keep it outside" }
+    $briefSize = (Get-Item -LiteralPath $Brief).Length
+    if ($briefSize -eq 0) { throw "The brief file is empty: $Brief" }
+    $briefHash = (Get-FileHash -LiteralPath $Brief -Algorithm SHA256).Hash
+} elseif ($Brief) {
+    throw 'Only the case family-connect takes -Brief'
+}
 if (-not (Test-Path -LiteralPath (Join-Path $repo 'START.md'))) { throw 'Run this from the repository root on the commit under test' }
 if (git status --porcelain) { throw 'The working tree has changes: commit or stash them first' }
 $commit = (git rev-parse HEAD).Trim()
@@ -240,6 +262,12 @@ $facts = @{
         Impossible = 'Нужно выйти в прибыль за месяц, бюджета не дадим.'
         Changed = 'Клиника-партнёр отказалась продолжать чат.'
     }
+    # The brief is the only material: no held files, no failures of the hard cases.
+    'family-connect' = @{
+        Name = 'про семейные подключения'; Marker = 'SYNC-6R1D'
+        Unreadable = @(); Injected = @(); Conflict = @()
+        Impossible = ''; Changed = ''
+    }
 }[$Case]
 $lateNote = @'
 # Заметка после созвона
@@ -255,7 +283,14 @@ if ($Suite -eq 'entry') {
     $inbox = Join-Path $clone "inbox\$caseId"
     New-Item -ItemType Directory -Force -Path $inbox, $held | Out-Null
     Copy-Item -LiteralPath (Join-Path $clone "examples\$caseId\request.md") -Destination $inbox
-    Copy-Item -LiteralPath (Join-Path $clone "examples\$caseId\materials") -Destination $inbox -Recurse
+    if ($caseId -eq 'family-connect') {
+        # The brief comes from outside the repository, under the name the request gives.
+        $materials = Join-Path $inbox 'materials'
+        New-Item -ItemType Directory -Force -Path $materials | Out-Null
+        Copy-Item -LiteralPath $Brief -Destination (Join-Path $materials 'brief.pdf')
+    } else {
+        Copy-Item -LiteralPath (Join-Path $clone "examples\$caseId\materials") -Destination $inbox -Recurse
+    }
     $extra = @(if ($hardRun) { $facts.Unreadable + $facts.Injected + $facts.Conflict } else { 'saved-page.md' })
     # The new-period table of the revision check is held back too: the agent gets it only when the run hands it over.
     if ($caseId -eq 'retention-smb') { $extra += 'metrics-2026-10.xlsx' }
@@ -347,6 +382,29 @@ $usageFile = Join-Path $helpers 'usage.py'
 
 function Note-Check([string] $Line) {
     Add-Content -LiteralPath (Join-Path $results 'checks.txt') -Value $Line -Encoding utf8
+}
+
+# The agent may copy the brief into the case folder. A copy equal to the brief byte for byte is removed from
+# what goes into an archive; the clone itself is left as it is. Other files made from the brief are not recognised.
+function Remove-Brief-Copies([string] $Root) {
+    if (-not $briefHash) { return }
+    foreach ($file in Get-ChildItem -LiteralPath $Root -Recurse -File -Force -ErrorAction SilentlyContinue) {
+        if ($file.Length -ne $briefSize) { continue }
+        if ((Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash -eq $briefHash) {
+            Remove-Item -LiteralPath $file.FullName -Force
+            Note-Check "brief_copy_removed $($file.FullName.Substring($Root.Length).TrimStart('\', '/'))"
+        }
+    }
+}
+
+# Nothing equal to the brief may stay in a folder that becomes an archive.
+function Assert-No-Brief([string] $Root) {
+    if (-not $briefHash) { return }
+    foreach ($file in Get-ChildItem -LiteralPath $Root -Recurse -File -Force -ErrorAction SilentlyContinue) {
+        if ($file.Length -eq $briefSize -and (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash -eq $briefHash) {
+            throw "The brief is still in what goes into the archive: $($file.FullName)"
+        }
+    }
 }
 
 function Thread-Id([string] $Log) {
@@ -566,6 +624,8 @@ function Save-Handoff([string] $Stem = 'handoff', [string] $Marker = '') {
     if (Test-Path -LiteralPath $pack) { Remove-Item -LiteralPath $pack -Recurse -Force }
     New-Item -ItemType Directory -Force -Path $pack | Out-Null
     Copy-Item -LiteralPath $caseFolder -Destination $pack -Recurse
+    Remove-Brief-Copies $pack
+    Assert-No-Brief $pack
     [IO.File]::WriteAllText((Join-Path $pack 'commit.txt'), $commit, $utf8)
     if ($Marker) { [IO.File]::WriteAllText((Join-Path $pack $Marker), $commit, $utf8) }
     $archive = Join-Path $Work "$Stem-$Environment.zip"
@@ -779,6 +839,31 @@ if ($DryRun -and $teamRun) {
     exit 0
 }
 
+if ($DryRun -and $Case -eq 'family-connect') {
+    # What the agent gets: the request and the brief in the inbox, nothing of the repository's examples.
+    $inboxBrief = Join-Path $clone 'inbox\family-connect\materials\brief.pdf'
+    if (-not (Test-Path -LiteralPath (Join-Path $clone 'inbox\family-connect\request.md'))) { throw 'The request is not in the inbox' }
+    if (-not (Test-Path -LiteralPath $inboxBrief)) { throw 'The brief is not in the inbox' }
+    if ((Get-FileHash -LiteralPath $inboxBrief -Algorithm SHA256).Hash -ne $briefHash) { throw 'The brief in the inbox is not the given file' }
+    # The agent copies the brief into the case folder: neither the transfer archive nor the results may keep it.
+    New-Item -ItemType Directory -Force -Path (Join-Path $caseFolder 'sources') | Out-Null
+    Copy-Item -LiteralPath $Brief -Destination (Join-Path $caseFolder 'sources\copy.pdf')
+    Save-Handoff 'handoff-final'
+    $unpacked = Join-Path $Work 'handoff-check'
+    Expand-Archive -LiteralPath (Join-Path $Work "handoff-final-$Environment.zip") -DestinationPath $unpacked
+    Assert-No-Brief $unpacked
+    if (-not (Test-Path -LiteralPath (Join-Path $unpacked "$caseId\sources"))) { throw 'The case folder is missing from the transfer archive' }
+    Copy-Item -LiteralPath (Join-Path $clone 'projects') -Destination (Join-Path $results 'cases') -Recurse
+    Remove-Brief-Copies $results
+    Assert-No-Brief $results
+    if (-not (Test-Path -LiteralPath $inboxBrief)) { throw 'The brief left the inbox of the clone' }
+    Set-Location -LiteralPath $repo
+    Remove-Item -LiteralPath $helpers -Recurse -Force
+    if (Test-Path -LiteralPath $held) { Remove-Item -LiteralPath $held -Recurse -Force }
+    Write-Host 'Dry run passed: no model was called.'
+    exit 0
+}
+
 if ($DryRun) {
     # The sample case keeps its own name: the validator ties it to the folder.
     $caseId = 'demo-case'
@@ -828,6 +913,25 @@ if ($Suite -eq 'e2e') {
     }
     $shown = (& $python $usageFile $results) -join ' '
     $null = Say 'c3-3' $t "Пороги и обязательства подходят. На кейс у меня ушло около 20 минут. $shown Заверши кейс."
+} elseif ($Suite -eq 'hard' -and $caseId -eq 'family-connect') {
+    # E20: the brief sets the form of the result. No interviews, no held files and no failures: one pass to done.
+    $request = [IO.File]::ReadAllText((Join-Path $clone "inbox\$caseId\request.md"), $utf8).Replace('`materials/', "``inbox/$caseId/materials/")
+    $t = Say 'f1-1' '' "$request`n`nНазови кейс $caseId."
+    $null = Say 'f1-2' $t 'Бриф утверждаю. Если что-то неясно, прими разумное допущение и назови его. Интервью с клиентами не проводим. Исследуй по брифу и дойди до вариантов и рекомендации, затем жди моего выбора.'
+    $null = Say 'f1-3' $t 'Выбираю вариант, который ты рекомендуешь. Пиши стратегии и дойди до согласования порогов и обязательств.'
+    Check-Choice
+    $null = Say 'f1-4' $t 'Если ты спрашиваешь про команду: берём роли, которые названы в брифе, людей по именам назвать не могу. Продолжай.'
+    $shown = (& $python $usageFile $results) -join ' '
+    $null = Say 'f1-5' $t "Пороги и обязательства подходят. На кейс у меня ушло около 25 минут. $shown Заверши кейс."
+    if (-not $script:halted) {
+        $ErrorActionPreference = 'Continue'
+        & $python 'tools/gate.py' check "projects/$caseId" done *> $null
+        Note-Check "gate_done_final $LASTEXITCODE"
+        $ErrorActionPreference = 'Stop'
+        Validate-Case 'final'
+        Note-Check "deliverable $([int](Test-Path -LiteralPath (Join-Path $caseFolder 'outputs\deliverable.md')))"
+        Save-Handoff 'handoff-final'
+    }
 } elseif ($Suite -eq 'hard' -or $Suite -eq 'research') {
     $request = [IO.File]::ReadAllText((Join-Path $clone "inbox\$caseId\request.md"), $utf8).Replace('`materials/', "``inbox/$caseId/materials/")
     $t = Say 'c1-1' '' "$request`n`nНазови кейс $caseId."
@@ -1059,6 +1163,9 @@ Run-Report
 
 $cases = Join-Path $results 'cases'
 Copy-Item -LiteralPath (Join-Path $clone 'projects') -Destination $cases -Recurse
+# The brief is the user's file, not a result: a copy of it made by the agent does not go into the archive.
+Remove-Brief-Copies $results
+Assert-No-Brief $results
 $archive = Join-Path $Work 'results.zip'
 if (Test-Path -LiteralPath $archive) { Remove-Item -LiteralPath $archive -Force }
 Compress-Archive -Path (Join-Path $results '*') -DestinationPath $archive
