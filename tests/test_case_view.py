@@ -81,6 +81,14 @@ class DemoPageTest(CaseViewTest):
         self.assertIn("с 2 ноября 2026 года, 10:00 (UTC+03:00) по 5 ноября 2026 года, 12:30 (UTC+03:00)", page)
         self.assertIsNone(case_view.TIMESTAMP_RE.search(page))
 
+    def test_deliverable_is_shown_first_when_it_exists(self):
+        self.assertNotIn("Документ для заказчика", self.build())
+        self.write("outputs/deliverable.md", "# Документ для заказчика\n\n"
+                   "Статус: выбор сделан [DEC-0002], вариант [OPT-0001]\n\n## Резюме\n\nСохраняем сервис.\n")
+        text = block_of(self.build(), "texts")
+        self.assertIn("Документ для заказчика", text)
+        self.assertLess(text.index("Документ для заказчика"), text.index("Продуктовая стратегия"))
+
     def test_human_time(self):
         self.assertEqual(case_view.human_time("2026-01-09T07:05:00Z"), "9 января 2026 года, 07:05 (UTC+00:00)")
         self.assertEqual(case_view.human_time("2026-03-01T23:59:00-05:30"), "1 марта 2026 года, 23:59 (UTC-05:30)")

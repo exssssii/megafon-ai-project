@@ -34,6 +34,11 @@ ASSUMPTION = "(допущение)"
 BRIEF = "brief.md"
 BRIEF_REF = "[бриф]"
 USER_WORDS_SECTION = "Слова пользователя"
+FORM_SECTION = "Форма результата"
+FORM_SOURCE_RE = re.compile(r"Источник:\s*\S.*")
+FORM_PART_RE = re.compile(r"(0|[1-9][0-9]*)\. (.+)")
+FORM_REQUIREMENT_RE = re.compile(r" {2,}- +\S.*")
+SUMMARY_PART = "Резюме"
 
 OPTIONS = "outputs/options.md"
 PRODUCT = "outputs/product-strategy.md"
@@ -41,6 +46,7 @@ COMMUNICATION = "outputs/communication-strategy.md"
 PLAN = "outputs/validation-plan.md"
 COMMITMENTS = "outputs/commitments.md"
 GUIDE = "outputs/interview-guide.md"
+DELIVERABLE = "outputs/deliverable.md"
 HISTORY = "outputs/.history"
 OPTION_REGISTRY = "decisions/options.json"
 QUESTION_REGISTRY = "research/questions.json"
@@ -287,6 +293,67 @@ def check_numbers(result, file, lines, index, record_id=None, shared_refs=(), us
                                f"{quantity['value']} is not in {', '.join(dict.fromkeys(linked)) or 'the brief'}", number)
 
 
+# --- form of the result ----------------------------------------------------
+
+def second_level_headings(lines: list[str]) -> list[tuple[int, str]]:
+    """(line number, name) of the second-level headings outside code fences, in file order."""
+    found, fenced = [], False
+    for number, line in enumerate(lines, 1):
+        if line.lstrip().startswith("```"):
+            fenced = not fenced
+        if not fenced and line.startswith("## "):
+            found.append((number, line[3:].strip()))
+    return found
+
+
+def parse_form(brief: list[str]) -> tuple[list[str], list[tuple[int | None, str]]] | None:
+    """Parts named in the section «Форма результата» of the brief, with the problems of reading it.
+
+    None when the brief has no such section. The grammar is strict on purpose: a form the gate cannot
+    read must send the agent back to the brief, not pass in silence. Requirements are not kept:
+    the gate does not check them, the reviewer does.
+    """
+    sections = split_sections(brief)
+    if FORM_SECTION not in sections:
+        return None
+    parts: list[str] = []
+    problems: list[tuple[int | None, str]] = []
+    headings = [number for number, name in second_level_headings(brief) if name == FORM_SECTION]
+    if len(headings) > 1:
+        problems.append((headings[1], f"the section «{FORM_SECTION}» is written twice: keep one"))
+        return parts, problems
+    first, expected, fenced = True, None, False
+    for number, line in sections[FORM_SECTION]:
+        if line.lstrip().startswith("```"):
+            fenced = not fenced
+        if not line.strip():
+            continue
+        was_first, first = first, False
+        part = FORM_PART_RE.fullmatch(line.rstrip())
+        if part and not fenced and part.group(2).strip():
+            index, name = int(part.group(1)), part.group(2).strip()
+            if not parts:
+                expected = 0 if index == 0 else 1
+                if index == 0 and name != SUMMARY_PART:
+                    problems.append((number, f"part 0 is only for «{SUMMARY_PART}»"))
+            if index != expected:
+                problems.append((number, f"part number {index}, expected {expected}"))
+            if name in parts:
+                problems.append((number, "the name of the part repeats"))
+            parts.append(name)
+            expected = index + 1
+        elif was_first and FORM_SOURCE_RE.fullmatch(line.strip()) and not fenced and not line[0].isspace():
+            continue
+        elif FORM_REQUIREMENT_RE.fullmatch(line.rstrip()) and not fenced:
+            if not parts:
+                problems.append((number, "a requirement before the first part"))
+        else:
+            problems.append((number, "not a part, a requirement or the source line"))
+    if not parts and not problems:
+        problems.append((headings[0], "the section has no numbered parts"))
+    return parts, problems
+
+
 # --- stage checks ----------------------------------------------------------
 
 class Gate:
@@ -307,6 +374,7 @@ class Gate:
         self.direction = self.active_decision("direction")
         self.cost_rules = validator.cost_rules   # options_format: 2 in case.json
         self.texts: dict[str, list[str] | None] = {}
+        self.form_parts: list[str] | None = None
 
     def active_decision(self, topic):
         return next((d for d in self.decisions if d["topic"] == topic), None)
@@ -348,6 +416,22 @@ class Gate:
                 result.problem("RESEARCH_HIDDEN_CONFLICT", QUESTION_REGISTRY, qid,
                                f"contested finding without a gap: {', '.join(contested)}")
         self.check_interviews()
+        self.check_form()
+
+    def check_form(self):
+        """The form of the result in the brief must be readable as soon as the brief is approved."""
+        self.form_parts = None
+        try:
+            form = parse_form(read_output(self.root, BRIEF) or [])
+        except UnicodeDecodeError:
+            return
+        if form is None:
+            return
+        parts, problems = form
+        for number, note in problems:
+            self.result.problem("FORM_UNREADABLE", BRIEF, None, note, number)
+        if not problems:
+            self.form_parts = parts
 
     def synthetic_sources(self) -> list[dict]:
         """Active synthetic conversations: the ones the session limits and the method date apply to."""
@@ -685,10 +769,38 @@ class Gate:
             result.problem("THRESHOLDS_NOT_CITED", PLAN, thresholds["id"],
                            "the validation plan does not cite the current thresholds decision")
         self.check_commitments()
+        self.check_deliverable()
         self.check_revisions()
         for record_id, record in self.index.items():
             if prefix_of(record_id) == "ACT" and isinstance(record, dict) and record.get("end") is None:
                 result.problem("ACTIONS_OPEN", "state/actions.jsonl", record_id, "started and not finished")
+
+    def check_deliverable(self):
+        """Only when the brief sets a form of the result: the document has the parts, in the order of the brief."""
+        result, parts = self.result, self.form_parts
+        if parts is None:  # no form, or FORM_UNREADABLE is already reported at research
+            return
+        if self.lines_of(DELIVERABLE) is None:
+            result.problem("DELIVERABLE_MISSING", DELIVERABLE, None, "the brief sets a form of the result")
+            return
+        lines = self.check_structure(DELIVERABLE, ())
+        self.check_status(DELIVERABLE, lines)
+        check_numbers(result, DELIVERABLE, list(enumerate(lines, 1)), self.index, user_said=self.user_said)
+        self.check_synthetic_marks(DELIVERABLE, lines)
+        sections = split_sections(lines)
+        for name in parts:
+            if name not in sections:
+                result.problem("DELIVERABLE_PART_MISSING", DELIVERABLE, None, f"no section «{name}»")
+            elif not has_text(sections[name]):
+                result.problem("DELIVERABLE_PART_EMPTY", DELIVERABLE, None, f"section «{name}» is empty")
+        found = [name for _, name in second_level_headings(lines) if name in parts]
+        wanted = [name for name in parts if name in sections]
+        if found != wanted:
+            repeated = next((name for name in found if found.count(name) > 1), None)
+            late = next((name for name, right in zip(found, wanted) if name != right), None)
+            note = (f"section «{repeated}» is written more than once" if repeated
+                    else f"section «{late}» is not in the order of the brief")
+            result.problem("DELIVERABLE_PART_ORDER", DELIVERABLE, None, note)
 
     def check_commitments(self):
         result = self.result

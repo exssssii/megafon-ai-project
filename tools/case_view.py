@@ -34,6 +34,7 @@ STAGES = {
 }
 TEXTS = ("outputs/product-strategy.md", "outputs/communication-strategy.md", "outputs/validation-plan.md",
          "outputs/commitments.md")
+DELIVERABLE = "outputs/deliverable.md"  # shown first among the documents when the brief set a form of the result
 PLAN, COMMITMENTS, REVISIONS, ACCOUNTING = TEXTS[2], TEXTS[3], "outputs/revisions.md", "outputs/accounting.md"
 ACTION_COLUMNS = ("Действие", "Ответственный", "Срок", "Показатель", "Основание")
 KIND_LABELS = {"fact": ("Факт", "fact"), "inference": ("Вывод", "inference"),
@@ -188,7 +189,7 @@ class View:
         self.questions = {r["id"]: r for r in load_registry(root, "research/questions.json", self.warnings)}
         self.options = {r["id"]: r for r in load_registry(root, "decisions/options.json", self.warnings)}
         self.decisions = {r["id"]: r for r in load_registry(root, "decisions/decisions.json", self.warnings)}
-        self.lines = {rel: read_lines(root, rel) for rel in (*TEXTS, REVISIONS, ACCOUNTING)}
+        self.lines = {rel: read_lines(root, rel) for rel in (DELIVERABLE, *TEXTS, REVISIONS, ACCOUNTING)}
         self.active_options = [r for _, r in sorted(self.options.items()) if is_active(r)]
         self.option_no = {r["id"]: number for number, r in enumerate(self.active_options, 1)}
         self.direction = self.find_direction()
@@ -530,7 +531,7 @@ class View:
 
     def block_texts(self) -> str:
         docs = []
-        for rel in TEXTS:
+        for rel in (DELIVERABLE, *TEXTS):
             lines = self.lines.get(rel)
             if lines is None:
                 continue

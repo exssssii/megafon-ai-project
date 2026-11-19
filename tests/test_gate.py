@@ -1167,6 +1167,170 @@ class Instructions(unittest.TestCase):
 
 
 
+FORM = """
+## Форма результата
+Источник: SRC-0001, с. 1–2
+0. Резюме
+   - главный вывод в начале
+1. Клиент и его проблема
+   - один восстановленный случай
+   - сравнение с альтернативой
+2. Предложение и путь к клиенту
+   - таблица прогноза
+
+"""
+BRIEF_HEAD = "# Бриф\n\n## Вопрос\n\nЧто делать?\n\n"
+DELIVERABLE_MD = f"""# Документ для заказчика
+
+{STATUS}
+
+## Резюме
+
+Сервис сохраняем [OPT-0001].
+
+## Клиент и его проблема
+
+Заявок в среднем 120 в месяц [CALC-0001].
+
+## Предложение и путь к клиенту
+
+Бесплатный обмен в пунктах [CLM-0001].
+"""
+
+
+class Deliverable(Base):
+    """The form of the result: checked only when the brief sets one."""
+
+    def set_brief(self, text):
+        self.write("brief.md", BRIEF_HEAD + text)
+
+    def setUp(self):
+        super().setUp()
+        self.set_brief(FORM)
+        self.write("outputs/deliverable.md", DELIVERABLE_MD)
+
+    def test_complete_document_passes(self):
+        self.assertEqual(self.codes(), set())
+
+    def test_case_without_a_form_is_checked_as_before(self):
+        self.set_brief("")
+        (self.case / "outputs/deliverable.md").unlink()
+        self.assertEqual(self.codes(), set())
+
+    def test_document_is_not_required_before_done(self):
+        (self.case / "outputs/deliverable.md").unlink()
+        for stage in gate.STAGES[:-1]:
+            self.assertEqual(self.codes(stage), set(), stage)
+
+    def test_unreadable_form_is_caught_from_research_on(self):
+        self.set_brief("## Форма результата\n1) Клиент\n")
+        for stage in gate.STAGES:
+            with self.subTest(stage):
+                _, report = self.check(stage)
+                self.assertEqual([p["code"] for p in report["problems"]], ["FORM_UNREADABLE"])
+
+    def test_two_form_sections_are_unreadable(self):
+        self.set_brief(FORM + "## Форма результата\n1. Клиент и его проблема\n")
+        _, report = self.check("research")
+        self.assertEqual([p["code"] for p in report["problems"]], ["FORM_UNREADABLE"])
+        self.assertIn("twice", report["problems"][0]["note"])
+
+    def test_repeated_part_in_the_document(self):
+        self.write("outputs/deliverable.md", DELIVERABLE_MD + "\n## Резюме\n\nЕщё раз.\n")
+        _, report = self.check()
+        self.assertEqual([(p["code"], "more than once" in p["note"]) for p in report["problems"]],
+                         [("DELIVERABLE_PART_ORDER", True)])
+
+    def test_document_is_required(self):
+        (self.case / "outputs/deliverable.md").unlink()
+        self.assertEqual(self.codes(), {"DELIVERABLE_MISSING"})
+
+    def test_missing_part_is_named(self):
+        self.replace("outputs/deliverable.md", "## Клиент и его проблема", "## Другое")
+        _, report = self.check()
+        self.assertEqual([(p["code"], p["note"]) for p in report["problems"]],
+                         [("DELIVERABLE_PART_MISSING", "no section «Клиент и его проблема»")])
+
+    def test_names_match_exactly_after_trimming(self):
+        self.replace("outputs/deliverable.md", "## Резюме", "## резюме")
+        self.assertEqual(self.codes(), {"DELIVERABLE_PART_MISSING"})
+        self.replace("outputs/deliverable.md", "## резюме", "## Резюме   ")
+        self.assertEqual(self.codes(), set())
+
+    def test_parts_out_of_order(self):
+        self.write("outputs/deliverable.md", DELIVERABLE_MD.replace("## Резюме", "## Временно")
+                   .replace("## Клиент и его проблема", "## Резюме")
+                   .replace("## Временно", "## Клиент и его проблема"))
+        self.assertEqual(self.codes(), {"DELIVERABLE_PART_ORDER"})
+
+    def test_extra_sections_and_subheadings_are_free(self):
+        self.replace("outputs/deliverable.md", "## Клиент и его проблема\n\n",
+                     "## Приложение\n\nСправка.\n\n## Клиент и его проблема\n\n### Случай\n\n")
+        self.assertEqual(self.codes(), set())
+
+    def test_empty_part(self):
+        self.replace("outputs/deliverable.md", "Заявок в среднем 120 в месяц [CALC-0001].", "### Только заголовок")
+        self.assertEqual(self.codes(), {"DELIVERABLE_PART_EMPTY"})
+
+    def test_status_line_is_required(self):
+        self.replace("outputs/deliverable.md", STATUS + "\n", "")
+        self.assertEqual(self.codes(), {"STATUS_LINE"})
+
+    def test_wrong_number_is_caught(self):
+        self.replace("outputs/deliverable.md", "120 в месяц", "130 в месяц")
+        self.assertEqual(self.codes(), {"NUMBER_MISMATCH"})
+
+    def test_number_needs_a_link(self):
+        self.replace("outputs/deliverable.md", "120 в месяц [CALC-0001]", "120 в месяц")
+        self.assertEqual(self.codes(), {"NUMBER_UNLINKED"})
+
+    def test_unknown_link_is_caught(self):
+        self.replace("outputs/deliverable.md", "[CLM-0001]", "[CLM-0099]")
+        self.assertIn("OUTPUT_LINK", self.codes())
+
+    def test_unreadable_form(self):
+        cases = {
+            "bracket numbering": "1) Клиент\n2) Предложение\n",
+            "number out of order": "1. Клиент\n3. Предложение\n",
+            "zero is not the summary": "0. Вводная часть\n1. Клиент\n",
+            "starts from two": "2. Клиент\n3. Предложение\n",
+            "requirement before a part": "   - главное\n1. Клиент\n",
+            "no parts": "Источник: SRC-0001\n",
+            "empty section": "",
+            "name on the next line": "1. Клиент\nи его проблема\n",
+            "sub-numbering": "1. Клиент\n1.1 Случай\n",
+            "source not first": "1. Клиент\nИсточник: SRC-0001\n",
+            "requirement without indent": "1. Клиент\n- главное\n",
+            "part without a name": "1. \n",
+            "part name repeats": "1. Клиент\n2. Клиент\n",
+        }
+        for name, body in cases.items():
+            with self.subTest(name):
+                self.set_brief("## Форма результата\n" + body)
+                _, report = self.check()
+                self.assertEqual({p["code"] for p in report["problems"]}, {"FORM_UNREADABLE"})
+                self.assertTrue(all(p["file"] == "brief.md" for p in report["problems"]))
+
+    def test_unreadable_form_points_at_the_line(self):
+        self.write("brief.md", "# Бриф\n\n## Форма результата\n1. Клиент\n3. Предложение\n")
+        _, report = self.check()
+        self.assertEqual([p["line"] for p in report["problems"]], [5])
+
+    def test_unreadable_form_does_not_ask_for_the_document(self):
+        self.set_brief("## Форма результата\n1) Клиент\n")
+        (self.case / "outputs/deliverable.md").unlink()
+        self.assertEqual(self.codes(), {"FORM_UNREADABLE"})
+
+    def test_form_without_the_summary_may_start_from_one(self):
+        self.set_brief("## Форма результата\n1. Клиент и его проблема\n2. Предложение и путь к клиенту\n")
+        self.replace("outputs/deliverable.md", "## Резюме\n\nСервис сохраняем [OPT-0001].\n\n", "")
+        self.assertEqual(self.codes(), set())
+
+    def test_the_form_ends_at_the_next_section(self):
+        self.set_brief(FORM + "## Допущения агента\n\nКакой-то текст без частей.\n")
+        self.assertEqual(self.codes(), set())
+
+
 METHOD_AT = "2026-11-08T10:00:00+03:00"
 LATER_AT = "2026-11-08T12:00:00+03:00"
 GUIDE_MD = """# Гайд интервью
