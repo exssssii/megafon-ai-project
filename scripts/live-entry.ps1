@@ -78,7 +78,7 @@ if ($Case -eq 'family-connect') {
     if (-not (Test-Path -LiteralPath $Brief -PathType Leaf)) { throw "The brief was not found: $Brief" }
     $Brief = (Resolve-Path -LiteralPath $Brief).Path
     if ([IO.Path]::GetExtension($Brief) -ne '.pdf') { throw "The brief must be a PDF file: $Brief" }
-    if ("$Brief".StartsWith("$repo\", [StringComparison]::OrdinalIgnoreCase)) { throw "The brief lies inside the repository: $Brief. Keep it outside" }
+    if ("$Brief".StartsWith("$repo$([IO.Path]::DirectorySeparatorChar)", [StringComparison]::OrdinalIgnoreCase)) { throw "The brief lies inside the repository: $Brief. Keep it outside" }
     $briefSize = (Get-Item -LiteralPath $Brief).Length
     if ($briefSize -eq 0) { throw "The brief file is empty: $Brief" }
     $briefHash = (Get-FileHash -LiteralPath $Brief -Algorithm SHA256).Hash
@@ -108,7 +108,8 @@ if (-not $Work) { $Work = Join-Path (Split-Path -Parent $repo) $(switch ($Suite)
 $Work = [IO.Path]::GetFullPath($Work)
 # A path like C:folder is relative to the current folder, and a clone inside the
 # repository makes its working tree dirty for every later run.
-if ("$Work\".StartsWith("$repo\", [StringComparison]::OrdinalIgnoreCase)) { throw "The work folder lies inside the repository: $Work. Pass -Work with a full path outside it, for example C:\b12-live" }
+$separator = [IO.Path]::DirectorySeparatorChar
+if ("$Work$separator".StartsWith("$repo$separator", [StringComparison]::OrdinalIgnoreCase)) { throw "The work folder lies inside the repository: $Work. Pass -Work with a full path outside it, for example C:\b12-live" }
 if ($Work -match '[^\x00-\x7F]') { throw "Path has non-ASCII characters, .venv breaks there: $Work. Pass -Work with an ASCII path, for example D:\b07-live" }
 if (-not $Model) { $Model = if ($Environment -eq 'codex') { 'gpt-6.1-sol' } else { 'claude-sonnet-5-5' } }
 if (-not $Codex) {
