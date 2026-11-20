@@ -15,9 +15,11 @@
 # not count for acceptance.
 # The short suites research (the first three replies of hard: the research, its numbers and the
 # first options) and resume (finish without the failures) check a fix in minutes; they do not count either.
-# The case family-connect (E20, the suite hard only) runs on a brief the repository does not hold: -Brief takes the path
+# The case family-connect (E20, the suites hard and continue) runs on a brief the repository does not hold: -Brief takes the path
 # to its PDF outside the repository. The file goes to the inbox of the clone as brief.pdf and never into the archives
 # of the results or of the transfer; a copy of it that the agent made in the case folder is removed from them.
+# Its hard run also saves handoff-<env>.zip when the agent waits for the choice; continue takes that archive in the
+# other environment, puts the brief back where the case expects it and goes from the choice to done.
 # -DryRun checks the clone, the stripping, the failures and the archives without any model.
 # Project skills (E14) are on and the skills built into the CLI are off, so a run sees exactly the
 # skills of .claude/skills or .agents/skills; -NoSkills turns the project skills off too, for the
@@ -70,7 +72,7 @@ $repo = (Get-Location).Path
 $briefHash = ''
 $briefSize = 0
 if ($Case -eq 'family-connect') {
-    if ($Suite -ne 'hard') { throw 'The case family-connect runs only in the suite hard' }
+    if ($Suite -notin 'hard', 'continue') { throw 'The case family-connect runs only in the suites hard and continue' }
     if ($PlainChat) { throw 'The case family-connect has no plain chat variant' }
     if (-not $Brief) { throw 'The case family-connect needs -Brief with the path to the PDF of the brief, kept outside the repository' }
     if (-not (Test-Path -LiteralPath $Brief -PathType Leaf)) { throw "The brief was not found: $Brief" }
@@ -291,7 +293,7 @@ if ($Suite -eq 'entry') {
     } else {
         Copy-Item -LiteralPath (Join-Path $clone "examples\$caseId\materials") -Destination $inbox -Recurse
     }
-    $extra = @(if ($hardRun) { $facts.Unreadable + $facts.Injected + $facts.Conflict } else { 'saved-page.md' })
+    $extra = @(if ($hardRun -or $caseId -eq 'family-connect') { $facts.Unreadable + $facts.Injected + $facts.Conflict } else { 'saved-page.md' })
     # The new-period table of the revision check is held back too: the agent gets it only when the run hands it over.
     if ($caseId -eq 'retention-smb') { $extra += 'metrics-2026-10.xlsx' }
     foreach ($name in $extra) { Copy-Item -LiteralPath (Join-Path $clone "examples\$caseId\extra\$name") -Destination $held }
@@ -404,6 +406,24 @@ function Assert-No-Brief([string] $Root) {
         if ($file.Length -eq $briefSize -and (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash -eq $briefHash) {
             throw "The brief is still in what goes into the archive: $($file.FullName)"
         }
+    }
+}
+
+# The archive carries no brief, yet a source of the case points to the copy the agent made: put the given
+# file back at each path whose recorded hash is the brief's, or the folder does not validate (SOURCE_MISSING).
+function Restore-Brief-Copies {
+    if (-not $briefHash) { return }
+    $sourcesFile = Join-Path $caseFolder 'evidence\sources.json'
+    if (-not (Test-Path -LiteralPath $sourcesFile)) { return }
+    $sources = ([IO.File]::ReadAllText($sourcesFile, $utf8) | ConvertFrom-Json).records
+    foreach ($source in $sources) {
+        $path = $source.location.path
+        if (-not $path -or "$($source.sha256)" -ne $briefHash.ToLowerInvariant()) { continue }
+        $target = Join-Path $caseFolder $path
+        if (Test-Path -LiteralPath $target) { continue }
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $target) | Out-Null
+        Copy-Item -LiteralPath $Brief -Destination $target
+        Note-Check "brief_copy_restored $path"
     }
 }
 
@@ -654,7 +674,8 @@ function Load-Handoff {
         Note-Check "archive_from $from"
     }
     Copy-Item -LiteralPath (Join-Path $unpacked $caseId) -Destination (Join-Path $clone 'projects') -Recurse
-    if ($Suite -eq 'continue') { Copy-Item -LiteralPath (Join-Path $held 'saved-page.md') -Destination (Join-Path $clone 'inbox') }
+    if ($Suite -eq 'continue' -and $caseId -ne 'family-connect') { Copy-Item -LiteralPath (Join-Path $held 'saved-page.md') -Destination (Join-Path $clone 'inbox') }
+    Restore-Brief-Copies
     Copy-Item -LiteralPath $Handoff -Destination (Join-Path $results 'handoff-received.zip')
 }
 
@@ -839,6 +860,20 @@ if ($DryRun -and $teamRun) {
     exit 0
 }
 
+if ($DryRun -and $Case -eq 'family-connect' -and $Suite -eq 'continue') {
+    # The archive of the hard run without the brief: loaded, the brief put back, the folder validates.
+    Load-Handoff
+    & $python (Join-Path $clone 'tools\validate_project.py') "projects/$caseId"
+    if ($LASTEXITCODE -ne 0) { throw 'The transferred folder does not validate: the brief was not put back' }
+    Check-Choice
+    if (-not $script:halted) { throw 'The transferred case already has a choice: pass the archive hard saves before it' }
+    Set-Location -LiteralPath $repo
+    Remove-Item -LiteralPath $helpers -Recurse -Force
+    if (Test-Path -LiteralPath $held) { Remove-Item -LiteralPath $held -Recurse -Force }
+    Write-Host 'Dry run passed: no model was called.'
+    exit 0
+}
+
 if ($DryRun -and $Case -eq 'family-connect') {
     # What the agent gets: the request and the brief in the inbox, nothing of the repository's examples.
     $inboxBrief = Join-Path $clone 'inbox\family-connect\materials\brief.pdf'
@@ -918,6 +953,8 @@ if ($Suite -eq 'e2e') {
     $request = [IO.File]::ReadAllText((Join-Path $clone "inbox\$caseId\request.md"), $utf8).Replace('`materials/', "``inbox/$caseId/materials/")
     $t = Say 'f1-1' '' "$request`n`nНазови кейс $caseId."
     $null = Say 'f1-2' $t 'Бриф утверждаю. Если что-то неясно, прими разумное допущение и назови его. Интервью с клиентами не проводим. Исследуй по брифу и дойди до вариантов и рекомендации, затем жди моего выбора.'
+    # The transfer of the demo: the case as it waits for the choice goes on in the other environment (suite continue).
+    if (-not $script:halted) { Save-Handoff }
     $null = Say 'f1-3' $t 'Выбираю вариант, который ты рекомендуешь. Пиши стратегии и дойди до согласования порогов и обязательств.'
     Check-Choice
     $null = Say 'f1-4' $t 'Если ты спрашиваешь про команду: берём роли, которые названы в брифе, людей по именам назвать не могу. Продолжай.'
@@ -994,6 +1031,24 @@ if ($Suite -eq 'e2e') {
         & $python 'tools/gate.py' check "projects/$caseId" research *> $null
         Note-Check "gate_research_final $LASTEXITCODE"
         $ErrorActionPreference = 'Stop'
+    }
+} elseif ($Suite -eq 'continue' -and $caseId -eq 'family-connect') {
+    # The second half of the hard run in a new chat of the other environment: the choice, the strategies and done.
+    Load-Handoff
+    Validate-Case 'loaded'
+    $t = Say 'h1' '' "Продолжи кейс $($facts.Name). Выбираю вариант, который ты рекомендуешь. Пиши стратегии и дойди до согласования порогов и обязательств."
+    Check-Choice
+    $null = Say 'h2' $t 'Если ты спрашиваешь про команду: берём роли, которые названы в брифе, людей по именам назвать не могу. Продолжай.'
+    $shown = (& $python $usageFile $results) -join ' '
+    $null = Say 'h3' $t "Пороги и обязательства подходят. $shown Заверши кейс."
+    if (-not $script:halted) {
+        $ErrorActionPreference = 'Continue'
+        & $python 'tools/gate.py' check "projects/$caseId" done *> $null
+        Note-Check "gate_done_final $LASTEXITCODE"
+        $ErrorActionPreference = 'Stop'
+        Validate-Case 'final'
+        Note-Check "deliverable $([int](Test-Path -LiteralPath (Join-Path $caseFolder 'outputs\deliverable.md')))"
+        Save-Handoff 'handoff-final'
     }
 } elseif ($Suite -eq 'continue') {
     Load-Handoff

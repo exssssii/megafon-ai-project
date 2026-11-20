@@ -197,10 +197,10 @@ Assert-Test 'live run takes -Brief only for family-connect' {
     Write-File $pdf "%PDF-generated`n"
     Check-Live-Refusal @('-Suite', 'hard', '-Case', 'direction-b2c', '-Brief', $pdf) 'Only the case family-connect takes -Brief'
 }
-Assert-Test 'live run of family-connect refuses suites other than hard' {
+Assert-Test 'live run of family-connect refuses suites other than hard and continue' {
     $pdf = Join-Path $run 'other.pdf'
     Write-File $pdf "%PDF-generated`n"
-    Check-Live-Refusal @('-Suite', 'e2e', '-Case', 'family-connect', '-Brief', $pdf) 'only in the suite hard'
+    Check-Live-Refusal @('-Suite', 'e2e', '-Case', 'family-connect', '-Brief', $pdf) 'only in the suites hard and continue'
 }
 Write-Host "Tests: $passed passed, $failed failed. Fixtures: $run"
 if ($failed) { exit 1 }
