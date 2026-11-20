@@ -1,0 +1,1612 @@
+{
+  "format_version": 1,
+  "records": [
+    {
+      "id": "CALC-0001",
+      "created_at": "2026-11-19T16:37:17+04:00",
+      "record_status": "active",
+      "inputs": [
+        {
+          "name": "план_подкл",
+          "source_id": "SRC-0001",
+          "locator": {
+            "kind": "page",
+            "page": 3,
+            "quote": "7 500"
+          },
+          "value": 7500,
+          "unit": "групп",
+          "period": "базовый год"
+        },
+        {
+          "name": "оценка_подкл",
+          "source_id": "SRC-0001",
+          "locator": {
+            "kind": "page",
+            "page": 6,
+            "quote": "начальных 6 500"
+          },
+          "value": 6500,
+          "unit": "групп",
+          "period": "базовый год"
+        }
+      ],
+      "method": {
+        "kind": "tool",
+        "description": "Отставание подключённых семейных групп от плана базового года: план минус оценка",
+        "formula": "план_подкл - оценка_подкл",
+        "digits": 0
+      },
+      "result": {
+        "status": "computed",
+        "value": 1000,
+        "unit": "групп",
+        "period": "базовый год"
+      },
+      "gaps": [],
+      "assumptions": [
+        "Оценка на конец базового года равна числу групп в начале планового года (бриф называет его начальным): 6 500"
+      ],
+      "reproduce": "tools/calc.py check projects/family-connect CALC-0001"
+    },
+    {
+      "id": "CALC-0002",
+      "created_at": "2026-11-19T16:37:17+04:00",
+      "record_status": "active",
+      "inputs": [
+        {
+          "name": "план_акт",
+          "source_id": "SRC-0001",
+          "locator": {
+            "kind": "page",
+            "page": 4,
+            "quote": "плане 5 000"
+          },
+          "value": 5000,
+          "unit": "групп",
+          "period": "базовый год"
+        },
+        {
+          "name": "оценка_акт",
+          "source_id": "SRC-0001",
+          "locator": {
+            "kind": "page",
+            "page": 4,
+            "quote": "4 000 активных групп"
+          },
+          "value": 4000,
+          "unit": "групп",
+          "period": "базовый год"
+        }
+      ],
+      "method": {
+        "kind": "tool",
+        "description": "Отставание активных семейных групп за последний месяц базового года: план минус оценка",
+        "formula": "план_акт - оценка_акт",
+        "digits": 0
+      },
+      "result": {
+        "status": "computed",
+        "value": 1000,
+        "unit": "групп",
+        "period": "базовый год"
+      },
+      "gaps": [],
+      "assumptions": [],
+      "reproduce": "tools/calc.py check projects/family-connect CALC-0002"
+    },
+    {
+      "id": "CALC-0003",
+      "created_at": "2026-11-19T16:37:28+04:00",
+      "record_status": "active",
+      "inputs": [
+        {
+          "name": "оценка_акт",
+          "source_id": "SRC-0001",
+          "locator": {
+            "kind": "page",
+            "page": 4,
+            "quote": "4 000 активных групп"
+          },
+          "value": 4000,
+          "unit": "групп",
+          "period": "базовый год"
+        },
+        {
+          "name": "оценка_подкл",
+          "source_id": "SRC-0001",
+          "locator": {
+            "kind": "page",
+            "page": 6,
+            "quote": "начальных 6 500"
+          },
+          "value": 6500,
+          "unit": "групп",
+          "period": "базовый год"
+        }
+      ],
+      "method": {
+        "kind": "tool",
+        "description": "Доля активных среди подключённых групп, оценка базового года",
+        "formula": "100 * оценка_акт / оценка_подкл",
+        "digits": 2
+      },
+      "result": {
+        "status": "computed",
+        "value": 61.54,
+        "unit": "%",
+        "period": "базовый год"
+      },
+      "gaps": [],
+      "assumptions": [
+        "Активные (последний месяц) и подключённые (конец года) взяты на конец базового года, как в самом брифе"
+      ],
+      "reproduce": "tools/calc.py check projects/family-connect CALC-0003"
+    },
+    {
+      "id": "CALC-0004",
+      "created_at": "2026-11-19T16:37:29+04:00",
+      "record_status": "active",
+      "inputs": [
+        {
+          "name": "план_акт",
+          "source_id": "SRC-0001",
+          "locator": {
+            "kind": "page",
+            "page": 4,
+            "quote": "плане 5 000"
+          },
+          "value": 5000,
+          "unit": "групп",
+          "period": "базовый год"
+        },
+        {
+          "name": "план_подкл",
+          "source_id": "SRC-0001",
+          "locator": {
+            "kind": "page",
+            "page": 3,
+            "quote": "7 500"
+          },
+          "value": 7500,
+          "unit": "групп",
+          "period": "базовый год"
+        }
+      ],
+      "method": {
+        "kind": "tool",
+        "description": "Доля активных среди подключённых групп по плану базового года",
+        "formula": "100 * план_акт / план_подкл",
+        "digits": 2
+      },
+      "result": {
+        "status": "computed",
+        "value": 66.67,
+        "unit": "%",
+        "period": "базовый год"
+      },
+      "gaps": [],
+      "assumptions": [
+        "Активные за последний месяц и подключённые на конец года взяты на конец базового года, как в брифе"
+      ],
+      "reproduce": "tools/calc.py check projects/family-connect CALC-0004"
+    },
+    {
+      "id": "CALC-0005",
+      "created_at": "2026-11-19T16:37:30+04:00",
+      "record_status": "withdrawn",
+      "status_reason": "заменён расчётом с единицей групп, чтобы цепочка считалась в одной единице",
+      "inputs": [
+        {
+          "name": "недобор_групп",
+          "calculation_id": "CALC-0001",
+          "value": 1000,
+          "unit": "групп",
+          "period": "базовый год"
+        },
+        {
+          "name": "доля_план",
+          "calculation_id": "CALC-0004",
+          "value": 66.67,
+          "unit": "%",
+          "period": "базовый год"
+        }
+      ],
+      "method": {
+        "kind": "tool",
+        "description": "Часть отставания по активным группам, которую объясняет меньшее число подключённых групп, если доля активных остаётся плановой",
+        "formula": "недобор_групп * доля_план / 100",
+        "digits": 1
+      },
+      "result": {
+        "status": "computed",
+        "value": 666.7,
+        "unit": "активных групп",
+        "period": "базовый год"
+      },
+      "gaps": [],
+      "assumptions": [
+        "Доля активных на уровне плана при фактическом числе групп (допущение для разбора)"
+      ],
+      "reproduce": "tools/calc.py check projects/family-connect CALC-0005"
+    },
+    {
+      "id": "CALC-0006",
+      "created_at": "2026-11-19T16:37:47+04:00",
+      "record_status": "active",
+      "inputs": [
+        {
+          "name": "недобор_групп",
+          "calculation_id": "CALC-0001",
+          "value": 1000,
+          "unit": "групп",
+          "period": "базовый год"
+        },
+        {
+          "name": "доля_план",
+          "calculation_id": "CALC-0004",
+          "value": 66.67,
+          "unit": "%",
+          "period": "базовый год"
+        }
+      ],
+      "method": {
+        "kind": "tool",
+        "description": "Часть отставания по активным группам, которую объясняет меньшее число подключённых групп, если доля активных остаётся плановой",
+        "formula": "недобор_групп * доля_план / 100",
+        "digits": 1
+      },
+      "result": {
+        "status": "computed",
+        "value": 666.7,
+        "unit": "групп",
+        "period": "базовый год"
+      },
+      "gaps": [],
+      "assumptions": [
+        "Доля активных на уровне плана при фактическом числе групп (допущение для разбора)"
+      ],
+      "reproduce": "tools/calc.py check projects/family-connect CALC-0006"
+    },
+    {
+      "id": "CALC-0007",
+      "created_at": "2026-11-19T16:37:48+04:00",
+      "record_status": "active",
+      "inputs": [
+        {
+          "name": "недобор_акт",
+          "calculation_id": "CALC-0002",
+          "value": 1000,
+          "unit": "групп",
+          "period": "базовый год"
+        },
+        {
+          "name": "эффект_групп",
+          "calculation_id": "CALC-0006",
+          "value": 666.7,
+          "unit": "групп",
+          "period": "базовый год"
+        }
+      ],
+      "method": {
+        "kind": "tool",
+        "description": "Часть отставания по активным группам, которую объясняет более низкая доля активных",
+        "formula": "недобор_акт - эффект_групп",
+        "digits": 1
+      },
+      "result": {
+        "status": "computed",
+        "value": 333.3,
+        "unit": "групп",
+        "period": "базовый год"
+      },
+      "gaps": [],
+      "assumptions": [],
+      "reproduce": "tools/calc.py check projects/family-connect CALC-0007"
+    },
+    {
+      "id": "CALC-0008",
+      "created_at": "2026-11-19T16:37:49+04:00",
+      "record_status": "active",
+      "inputs": [
+        {
+          "name": "эффект_групп",
+          "calculation_id": "CALC-0006",
+          "value": 666.7,
+          "unit": "групп",
+          "period": "базовый год"
+        },
+        {
+          "name": "недобор_акт",
+          "calculation_id": "CALC-0002",
+          "value": 1000,
+          "unit": "групп",
+          "period": "базовый год"
+        }
+      ],
+      "method": {
+        "kind": "tool",
+        "description": "Доля отставания по активным группам, объяснимая меньшим числом подключённых групп",
+        "formula": "100 * эффект_групп / недобор_акт",
+        "digits": 1
+      },
+      "result": {
+        "status": "computed",
+        "value": 66.7,
+        "unit": "%",
+        "period": "базовый год"
+      },
+      "gaps": [],
+      "assumptions": [
+        "Разбор показывает порядок величины и не доказывает причину"
+      ],
+      "reproduce": "tools/calc.py check projects/family-connect CALC-0008"
+    },
+    {
+      "id": "CALC-0009",
+      "created_at": "2026-11-19T16:37:50+04:00",
+      "record_status": "active",
+      "inputs": [
+        {
+          "name": "план_пр",
+          "source_id": "SRC-0001",
+          "locator": {
+            "kind": "page",
+            "page": 4,
+            "quote": "плане 282 млн"
+          },
+          "value": 282,
+          "unit": "млн руб.",
+          "period": "базовый год"
+        },
+        {
+          "name": "оценка_пр",
+          "source_id": "SRC-0001",
+          "locator": {
+            "kind": "page",
+            "page": 4,
+            "quote": "275 млн руб. валовой"
+          },
+          "value": 275,
+          "unit": "млн руб.",
+          "period": "базовый год"
+        }
+      ],
+      "method": {
+        "kind": "tool",
+        "description": "Отставание валовой прибыли от плана базового года: план минус оценка",
+        "formula": "план_пр - оценка_пр",
+        "digits": 0
+      },
+      "result": {
+        "status": "computed",
+        "value": 7,
+        "unit": "млн руб.",
+        "period": "базовый год"
+      },
+      "gaps": [],
+      "assumptions": [],
+      "reproduce": "tools/calc.py check projects/family-connect CALC-0009"
+    },
+    {
+      "id": "CALC-0010",
+      "created_at": "2026-11-19T16:37:51+04:00",
+      "record_status": "active",
+      "inputs": [
+        {
+          "name": "цель_пр",
+          "source_id": "SRC-0001",
+          "locator": {
+            "kind": "page",
+            "page": 9,
+            "quote": "цели в 285 млн"
+          },
+          "value": 285,
+          "unit": "млн руб.",
+          "period": "плановый год"
+        },
+        {
+          "name": "без_изм_пр",
+          "source_id": "SRC-0001",
+          "locator": {
+            "kind": "page",
+            "page": 9,
+            "quote": "с 279 млн руб."
+          },
+          "value": 279,
+          "unit": "млн руб.",
+          "period": "плановый год"
+        }
+      ],
+      "method": {
+        "kind": "tool",
+        "description": "Нехватка валовой прибыли до минимальной цели планового года при работе без изменений",
+        "formula": "цель_пр - без_изм_пр",
+        "digits": 0
+      },
+      "result": {
+        "status": "computed",
+        "value": 6,
+        "unit": "млн руб.",
+        "period": "плановый год"
+      },
+      "gaps": [],
+      "assumptions": [],
+      "reproduce": "tools/calc.py check projects/family-connect CALC-0010"
+    },
+    {
+      "id": "CALC-0011",
+      "created_at": "2026-11-19T16:37:51+04:00",
+      "record_status": "active",
+      "inputs": [
+        {
+          "name": "нехватка",
+          "calculation_id": "CALC-0010",
+          "value": 6,
+          "unit": "млн руб.",
+          "period": "плановый год"
+        },
+        {
+          "name": "ставка",
+          "source_id": "SRC-0001",
+          "locator": {
+            "kind": "page",
+            "page": 9,
+            "quote": "по 500 руб."
+          },
+          "value": 500,
+          "unit": "руб. за оплаченный месяц номера",
+          "period": "плановый год"
+        }
+      ],
+      "method": {
+        "kind": "tool",
+        "description": "Сколько дополнительных оплаченных месяцев номера нужно, чтобы закрыть нехватку прибыли, при отсутствии других вкладов и новых расходов",
+        "formula": "нехватка * 1000000 / ставка",
+        "digits": 0
+      },
+      "result": {
+        "status": "computed",
+        "value": 12000,
+        "unit": "оплаченных месяцев номера",
+        "period": "плановый год"
+      },
+      "gaps": [],
+      "assumptions": [
+        "Перевод млн руб. в руб. умножением на 1 000 000"
+      ],
+      "reproduce": "tools/calc.py check projects/family-connect CALC-0011"
+    },
+    {
+      "id": "CALC-0012",
+      "created_at": "2026-11-19T16:37:52+04:00",
+      "record_status": "active",
+      "inputs": [
+        {
+          "name": "цель_подкл",
+          "source_id": "SRC-0001",
+          "locator": {
+            "kind": "page",
+            "page": 6,
+            "quote": "цель в 12 000 групп"
+          },
+          "value": 12000,
+          "unit": "групп",
+          "period": "плановый год"
+        },
+        {
+          "name": "доля",
+          "source_id": "SRC-0001",
+          "locator": {
+            "kind": "page",
+            "page": 6,
+            "quote": "62,5 %"
+          },
+          "value": 62.5,
+          "unit": "%",
+          "period": "плановый год"
+        }
+      ],
+      "method": {
+        "kind": "tool",
+        "description": "Активные группы в последний месяц планового года, если подключено 12 000 групп, а доля активных 62,5 % (сценарий без изменений)",
+        "formula": "цель_подкл * доля / 100",
+        "digits": 0
+      },
+      "result": {
+        "status": "computed",
+        "value": 7500,
+        "unit": "групп",
+        "period": "плановый год"
+      },
+      "gaps": [],
+      "assumptions": [],
+      "reproduce": "tools/calc.py check projects/family-connect CALC-0012"
+    },
+    {
+      "id": "CALC-0013",
+      "created_at": "2026-11-19T16:37:53+04:00",
+      "record_status": "active",
+      "inputs": [
+        {
+          "name": "цель_акт",
+          "source_id": "SRC-0001",
+          "locator": {
+            "kind": "page",
+            "page": 6,
+            "quote": "цели в 8 000 активных"
+          },
+          "value": 8000,
+          "unit": "групп",
+          "period": "плановый год"
+        },
+        {
+          "name": "активные",
+          "calculation_id": "CALC-0012",
+          "value": 7500,
+          "unit": "групп",
+          "period": "плановый год"
+        }
+      ],
+      "method": {
+        "kind": "tool",
+        "description": "Недобор активных групп до цели при цели по подключённым и прежней доле активных",
+        "formula": "цель_акт - активные",
+        "digits": 0
+      },
+      "result": {
+        "status": "computed",
+        "value": 500,
+        "unit": "групп",
+        "period": "плановый год"
+      },
+      "gaps": [],
+      "assumptions": [],
+      "reproduce": "tools/calc.py check projects/family-connect CALC-0013"
+    },
+    {
+      "id": "CALC-0014",
+      "created_at": "2026-11-19T16:37:54+04:00",
+      "record_status": "active",
+      "inputs": [
+        {
+          "name": "месяцы",
+          "calculation_id": "CALC-0011",
+          "value": 12000,
+          "unit": "оплаченных месяцев номера",
+          "period": "плановый год"
+        },
+        {
+          "name": "групп_без_изм",
+          "source_id": "SRC-0001",
+          "locator": {
+            "kind": "page",
+            "page": 6,
+            "quote": "ожидается 8 000 групп"
+          },
+          "value": 8000,
+          "unit": "групп",
+          "period": "плановый год"
+        }
+      ],
+      "method": {
+        "kind": "tool",
+        "description": "Сколько дополнительных оплаченных месяцев на один номер за год нужно, чтобы закрыть нехватку прибыли только удержанием групп сценария без изменений",
+        "formula": "месяцы / (групп_без_изм * 3)",
+        "digits": 2
+      },
+      "result": {
+        "status": "computed",
+        "value": 0.5,
+        "unit": "оплаченных месяцев на номер",
+        "period": "плановый год"
+      },
+      "gaps": [],
+      "assumptions": [
+        "3 номера в среднем в семейной группе (допущение; в брифе число номеров в группе не дано)"
+      ],
+      "reproduce": "tools/calc.py check projects/family-connect CALC-0014"
+    },
+    {
+      "id": "CALC-0015",
+      "created_at": "2026-11-19T16:37:55+04:00",
+      "record_status": "active",
+      "inputs": [
+        {
+          "name": "групп_без_изм",
+          "source_id": "SRC-0001",
+          "locator": {
+            "kind": "page",
+            "page": 6,
+            "quote": "ожидается 8 000 групп"
+          },
+          "value": 8000,
+          "unit": "групп",
+          "period": "плановый год"
+        }
+      ],
+      "method": {
+        "kind": "tool",
+        "description": "Подходящие номера в группах сценария без изменений: основной ход",
+        "formula": "групп_без_изм * 70 / 100 * 3",
+        "digits": 0
+      },
+      "result": {
+        "status": "computed",
+        "value": 16800,
+        "unit": "номеров",
+        "period": "плановый год"
+      },
+      "gaps": [],
+      "assumptions": [
+        "70 % групп на подходящем тарифе (допущение; разбивки по тарифам в брифе нет)",
+        "3 номера в группе (допущение)"
+      ],
+      "reproduce": "tools/calc.py check projects/family-connect CALC-0015"
+    },
+    {
+      "id": "CALC-0016",
+      "created_at": "2026-11-19T16:37:55+04:00",
+      "record_status": "active",
+      "inputs": [
+        {
+          "name": "номера",
+          "calculation_id": "CALC-0015",
+          "value": 16800,
+          "unit": "номеров",
+          "period": "плановый год"
+        },
+        {
+          "name": "пп",
+          "source_id": "SRC-0001",
+          "locator": {
+            "kind": "page",
+            "page": 7,
+            "quote": "в 3 процентных пункта"
+          },
+          "value": 3,
+          "unit": "п. п.",
+          "period": "плановый год"
+        }
+      ],
+      "method": {
+        "kind": "tool",
+        "description": "Номера, у которых ограничение не наступит, при снижении доли ограничений на 3 п. п.: основной ход",
+        "formula": "номера * пп / 100",
+        "digits": 0
+      },
+      "result": {
+        "status": "computed",
+        "value": 504,
+        "unit": "номеров с предотвращённым ограничением",
+        "period": "плановый год"
+      },
+      "gaps": [],
+      "assumptions": [
+        "Эффект 3 п. п. (с 12 % до 9 %) взят из учебного примера брифа как допущение об эффекте предупреждения, а не как измеренная величина (допущение)"
+      ],
+      "reproduce": "tools/calc.py check projects/family-connect CALC-0016"
+    },
+    {
+      "id": "CALC-0017",
+      "created_at": "2026-11-19T16:37:56+04:00",
+      "record_status": "active",
+      "inputs": [
+        {
+          "name": "предотвращено",
+          "calculation_id": "CALC-0016",
+          "value": 504,
+          "unit": "номеров с предотвращённым ограничением",
+          "period": "плановый год"
+        }
+      ],
+      "method": {
+        "kind": "tool",
+        "description": "Дополнительные оплаченные месяцы за плановый год за счёт удержания: основной ход",
+        "formula": "предотвращено * 10 / 100 * 3",
+        "digits": 0
+      },
+      "result": {
+        "status": "computed",
+        "value": 151,
+        "unit": "оплаченных месяцев номера",
+        "period": "плановый год"
+      },
+      "gaps": [],
+      "assumptions": [
+        "10 % предотвращённых ограничений закончились бы уходом номера (допущение; данных об уходах нет)",
+        "Удержанный номер даёт 3 дополнительных оплаченных месяца в плановом году, так как услуга работает со второго полугодия (допущение)"
+      ],
+      "reproduce": "tools/calc.py check projects/family-connect CALC-0017"
+    },
+    {
+      "id": "CALC-0018",
+      "created_at": "2026-11-19T16:37:57+04:00",
+      "record_status": "active",
+      "inputs": [
+        {
+          "name": "месяцы",
+          "calculation_id": "CALC-0017",
+          "value": 151,
+          "unit": "оплаченных месяцев номера",
+          "period": "плановый год"
+        },
+        {
+          "name": "ставка",
+          "source_id": "SRC-0001",
+          "locator": {
+            "kind": "page",
+            "page": 9,
+            "quote": "по 500 руб."
+          },
+          "value": 500,
+          "unit": "руб. за оплаченный месяц номера",
+          "period": "плановый год"
+        }
+      ],
+      "method": {
+        "kind": "tool",
+        "description": "Валовая прибыль от удержания за плановый год: основной ход",
+        "formula": "месяцы * ставка",
+        "digits": 0
+      },
+      "result": {
+        "status": "computed",
+        "value": 75500,
+        "unit": "руб.",
+        "period": "плановый год"
+      },
+      "gaps": [],
+      "assumptions": [],
+      "reproduce": "tools/calc.py check projects/family-connect CALC-0018"
+    },
+    {
+      "id": "CALC-0019",
+      "created_at": "2026-11-19T16:37:58+04:00",
+      "record_status": "active",
+      "inputs": [
+        {
+          "name": "нехватка",
+          "calculation_id": "CALC-0010",
+          "value": 6,
+          "unit": "млн руб.",
+          "period": "плановый год"
+        },
+        {
+          "name": "вклад",
+          "calculation_id": "CALC-0018",
+          "value": 75500,
+          "unit": "руб.",
+          "period": "плановый год"
+        }
+      ],
+      "method": {
+        "kind": "tool",
+        "description": "Во сколько раз нехватка прибыли больше вклада варианта A: основной ход",
+        "formula": "нехватка * 1000000 / вклад",
+        "digits": 1
+      },
+      "result": {
+        "status": "computed",
+        "value": 79.5,
+        "unit": "раз",
+        "period": "плановый год"
+      },
+      "gaps": [],
+      "assumptions": [
+        "Перевод млн руб. в руб. умножением на 1 000 000"
+      ],
+      "reproduce": "tools/calc.py check projects/family-connect CALC-0019"
+    },
+    {
+      "id": "CALC-0020",
+      "created_at": "2026-11-19T16:37:59+04:00",
+      "record_status": "active",
+      "inputs": [
+        {
+          "name": "предотвращено",
+          "calculation_id": "CALC-0016",
+          "value": 504,
+          "unit": "номеров с предотвращённым ограничением",
+          "period": "плановый год"
+        }
+      ],
+      "method": {
+        "kind": "tool",
+        "description": "Предел месяцев от удержания в плановом году, если бы все предотвращённые ограничения удержали номер: основной ход",
+        "formula": "предотвращено * 3",
+        "digits": 0
+      },
+      "result": {
+        "status": "computed",
+        "value": 1512,
+        "unit": "оплаченных месяцев номера",
+        "period": "плановый год"
+      },
+      "gaps": [],
+      "assumptions": [
+        "3 месяца на удержанный номер (допущение, как в основном ходе)"
+      ],
+      "reproduce": "tools/calc.py check projects/family-connect CALC-0020"
+    },
+    {
+      "id": "CALC-0021",
+      "created_at": "2026-11-19T16:38:00+04:00",
+      "record_status": "active",
+      "inputs": [
+        {
+          "name": "групп_без_изм",
+          "source_id": "SRC-0001",
+          "locator": {
+            "kind": "page",
+            "page": 6,
+            "quote": "ожидается 8 000 групп"
+          },
+          "value": 8000,
+          "unit": "групп",
+          "period": "плановый год"
+        }
+      ],
+      "method": {
+        "kind": "tool",
+        "description": "Подходящие номера в группах сценария без изменений: менее благоприятный ход",
+        "formula": "групп_без_изм * 50 / 100 * 3",
+        "digits": 0
+      },
+      "result": {
+        "status": "computed",
+        "value": 12000,
+        "unit": "номеров",
+        "period": "плановый год"
+      },
+      "gaps": [],
+      "assumptions": [
+        "50 % групп на подходящем тарифе (допущение)",
+        "3 номера в группе (допущение)"
+      ],
+      "reproduce": "tools/calc.py check projects/family-connect CALC-0021"
+    },
+    {
+      "id": "CALC-0022",
+      "created_at": "2026-11-19T16:38:01+04:00",
+      "record_status": "active",
+      "inputs": [
+        {
+          "name": "номера",
+          "calculation_id": "CALC-0021",
+          "value": 12000,
+          "unit": "номеров",
+          "period": "плановый год"
+        },
+        {
+          "name": "пп",
+          "source_id": "SRC-0001",
+          "locator": {
+            "kind": "page",
+            "page": 7,
+            "quote": "в 3 процентных пункта"
+          },
+          "value": 3,
+          "unit": "п. п.",
+          "period": "плановый год"
+        }
+      ],
+      "method": {
+        "kind": "tool",
+        "description": "Номера с предотвращённым ограничением: менее благоприятный ход, эффект вдвое меньше",
+        "formula": "номера * пп / 2 / 100",
+        "digits": 0
+      },
+      "result": {
+        "status": "computed",
+        "value": 180,
+        "unit": "номеров с предотвращённым ограничением",
+        "period": "плановый год"
+      },
+      "gaps": [],
+      "assumptions": [
+        "Эффект вдвое меньше основного, 1,5 п. п. (допущение)"
+      ],
+      "reproduce": "tools/calc.py check projects/family-connect CALC-0022"
+    },
+    {
+      "id": "CALC-0023",
+      "created_at": "2026-11-19T16:38:02+04:00",
+      "record_status": "active",
+      "inputs": [
+        {
+          "name": "предотвращено",
+          "calculation_id": "CALC-0022",
+          "value": 180,
+          "unit": "номеров с предотвращённым ограничением",
+          "period": "плановый год"
+        }
+      ],
+      "method": {
+        "kind": "tool",
+        "description": "Дополнительные оплаченные месяцы за плановый год: менее благоприятный ход",
+        "formula": "предотвращено * 5 / 100 * 2",
+        "digits": 0
+      },
+      "result": {
+        "status": "computed",
+        "value": 18,
+        "unit": "оплаченных месяцев номера",
+        "period": "плановый год"
+      },
+      "gaps": [],
+      "assumptions": [
+        "5 % предотвращённых ограничений закончились бы уходом (допущение)",
+        "2 дополнительных месяца на удержанный номер (допущение)"
+      ],
+      "reproduce": "tools/calc.py check projects/family-connect CALC-0023"
+    },
+    {
+      "id": "CALC-0024",
+      "created_at": "2026-11-19T16:38:02+04:00",
+      "record_status": "active",
+      "inputs": [
+        {
+          "name": "месяцы",
+          "calculation_id": "CALC-0023",
+          "value": 18,
+          "unit": "оплаченных месяцев номера",
+          "period": "плановый год"
+        },
+        {
+          "name": "ставка",
+          "source_id": "SRC-0001",
+          "locator": {
+            "kind": "page",
+            "page": 9,
+            "quote": "по 500 руб."
+          },
+          "value": 500,
+          "unit": "руб. за оплаченный месяц номера",
+          "period": "плановый год"
+        }
+      ],
+      "method": {
+        "kind": "tool",
+        "description": "Валовая прибыль от удержания за плановый год: менее благоприятный ход",
+        "formula": "месяцы * ставка",
+        "digits": 0
+      },
+      "result": {
+        "status": "computed",
+        "value": 9000,
+        "unit": "руб.",
+        "period": "плановый год"
+      },
+      "gaps": [],
+      "assumptions": [],
+      "reproduce": "tools/calc.py check projects/family-connect CALC-0024"
+    },
+    {
+      "id": "CALC-0025",
+      "created_at": "2026-11-19T16:38:03+04:00",
+      "record_status": "active",
+      "inputs": [
+        {
+          "name": "нехватка",
+          "calculation_id": "CALC-0010",
+          "value": 6,
+          "unit": "млн руб.",
+          "period": "плановый год"
+        },
+        {
+          "name": "вклад",
+          "calculation_id": "CALC-0024",
+          "value": 9000,
+          "unit": "руб.",
+          "period": "плановый год"
+        }
+      ],
+      "method": {
+        "kind": "tool",
+        "description": "Во сколько раз нехватка прибыли больше вклада варианта A: менее благоприятный ход",
+        "formula": "нехватка * 1000000 / вклад",
+        "digits": 0
+      },
+      "result": {
+        "status": "computed",
+        "value": 667,
+        "unit": "раз",
+        "period": "плановый год"
+      },
+      "gaps": [],
+      "assumptions": [
+        "Перевод млн руб. в руб. умножением на 1 000 000"
+      ],
+      "reproduce": "tools/calc.py check projects/family-connect CALC-0025"
+    },
+    {
+      "id": "CALC-0026",
+      "created_at": "2026-11-19T16:38:04+04:00",
+      "record_status": "active",
+      "inputs": [
+        {
+          "name": "ставка",
+          "source_id": "SRC-0001",
+          "locator": {
+            "kind": "page",
+            "page": 9,
+            "quote": "по 500 руб."
+          },
+          "value": 500,
+          "unit": "руб. за оплаченный месяц номера",
+          "period": "плановый год"
+        }
+      ],
+      "method": {
+        "kind": "tool",
+        "description": "Оплаченные месяцы номера, которые нужны, чтобы окупить разработку варианта A (предупреждение в существующем приложении), основной ход",
+        "formula": "3.5 * 250000 / ставка",
+        "digits": 0
+      },
+      "result": {
+        "status": "computed",
+        "value": 1750,
+        "unit": "оплаченных месяцев номера",
+        "period": "плановый год"
+      },
+      "gaps": [],
+      "assumptions": [
+        "Объём 3.5 человеко-месяцев: дизайн 0,5, разработка 2,0, проверка 0,5, аналитика 0,5 (допущение)",
+        "Ставка 250 000 руб. за человеко-месяц (допущение; ставки в брифе нет)"
+      ],
+      "reproduce": "tools/calc.py check projects/family-connect CALC-0026"
+    },
+    {
+      "id": "CALC-0027",
+      "created_at": "2026-11-19T16:38:05+04:00",
+      "record_status": "active",
+      "inputs": [
+        {
+          "name": "месяцы",
+          "calculation_id": "CALC-0026",
+          "value": 1750,
+          "unit": "оплаченных месяцев номера",
+          "period": "плановый год"
+        },
+        {
+          "name": "ставка",
+          "source_id": "SRC-0001",
+          "locator": {
+            "kind": "page",
+            "page": 9,
+            "quote": "по 500 руб."
+          },
+          "value": 500,
+          "unit": "руб. за оплаченный месяц номера",
+          "period": "плановый год"
+        }
+      ],
+      "method": {
+        "kind": "tool",
+        "description": "Затраты на разработку варианта A (предупреждение в существующем приложении), основной ход",
+        "formula": "месяцы * ставка",
+        "digits": 0
+      },
+      "result": {
+        "status": "computed",
+        "value": 875000,
+        "unit": "руб.",
+        "period": "плановый год"
+      },
+      "gaps": [],
+      "assumptions": [
+        "Тот же объём и ставка, что в расчёте оплаченных месяцев (допущение)"
+      ],
+      "reproduce": "tools/calc.py check projects/family-connect CALC-0027"
+    },
+    {
+      "id": "CALC-0028",
+      "created_at": "2026-11-19T16:38:06+04:00",
+      "record_status": "active",
+      "inputs": [
+        {
+          "name": "затраты",
+          "calculation_id": "CALC-0027",
+          "value": 875000,
+          "unit": "руб.",
+          "period": "плановый год"
+        }
+      ],
+      "method": {
+        "kind": "tool",
+        "description": "Запас ресурса разработчиков на второй квартал для варианта A (предупреждение в существующем приложении): ресурс минус потребность (отрицательное значение значит недостаток)",
+        "formula": "3 - затраты / 250000 * 2.0 / 3.5",
+        "digits": 2
+      },
+      "result": {
+        "status": "computed",
+        "value": 1,
+        "unit": "человеко-месяцев",
+        "period": "второй квартал планового года"
+      },
+      "gaps": [],
+      "assumptions": [
+        "Ресурс разработчиков 3 человеко-месяца на второй квартал названо в брифе (стр. 11)",
+        "Доля разработчиков в объёме: 2.0 из 3.5 человеко-месяцев (допущение)",
+        "Ставка 250 000 руб. за человеко-месяц (допущение; ставки в брифе нет)"
+      ],
+      "reproduce": "tools/calc.py check projects/family-connect CALC-0028"
+    },
+    {
+      "id": "CALC-0029",
+      "created_at": "2026-11-19T16:38:07+04:00",
+      "record_status": "active",
+      "inputs": [
+        {
+          "name": "затраты",
+          "calculation_id": "CALC-0027",
+          "value": 875000,
+          "unit": "руб.",
+          "period": "плановый год"
+        }
+      ],
+      "method": {
+        "kind": "tool",
+        "description": "Затраты на разработку варианта A: менее благоприятный ход, объём больше на половину",
+        "formula": "затраты * 1.5",
+        "digits": 0
+      },
+      "result": {
+        "status": "computed",
+        "value": 1312500,
+        "unit": "руб.",
+        "period": "плановый год"
+      },
+      "gaps": [],
+      "assumptions": [
+        "Объём больше основного на 50 % (допущение), то есть 5,25 человеко-месяца"
+      ],
+      "reproduce": "tools/calc.py check projects/family-connect CALC-0029"
+    },
+    {
+      "id": "CALC-0030",
+      "created_at": "2026-11-19T16:38:09+04:00",
+      "record_status": "active",
+      "inputs": [
+        {
+          "name": "затраты",
+          "calculation_id": "CALC-0029",
+          "value": 1312500,
+          "unit": "руб.",
+          "period": "плановый год"
+        }
+      ],
+      "method": {
+        "kind": "tool",
+        "description": "Запас ресурса разработчиков для варианта A: менее благоприятный ход, разработка 3,0 человеко-месяца",
+        "formula": "3 - затраты / 250000 * 3 / 5.25",
+        "digits": 2
+      },
+      "result": {
+        "status": "computed",
+        "value": 0,
+        "unit": "человеко-месяцев",
+        "period": "второй квартал планового года"
+      },
+      "gaps": [],
+      "assumptions": [
+        "Ресурс разработчиков 3 человеко-месяца названо в брифе (стр. 11)",
+        "Разработка 3,0 из 5,25 человеко-месяца (допущение)",
+        "Ставка 250 000 руб. за человеко-месяц (допущение; ставки в брифе нет)"
+      ],
+      "reproduce": "tools/calc.py check projects/family-connect CALC-0030"
+    },
+    {
+      "id": "CALC-0031",
+      "created_at": "2026-11-19T16:38:10+04:00",
+      "record_status": "active",
+      "inputs": [
+        {
+          "name": "затраты",
+          "calculation_id": "CALC-0027",
+          "value": 875000,
+          "unit": "руб.",
+          "period": "плановый год"
+        },
+        {
+          "name": "вклад",
+          "calculation_id": "CALC-0018",
+          "value": 75500,
+          "unit": "руб.",
+          "period": "плановый год"
+        }
+      ],
+      "method": {
+        "kind": "tool",
+        "description": "Во сколько раз затраты на вариант A больше его вклада в прибыль за плановый год: основной ход",
+        "formula": "затраты / вклад",
+        "digits": 1
+      },
+      "result": {
+        "status": "computed",
+        "value": 11.6,
+        "unit": "раз",
+        "period": "плановый год"
+      },
+      "gaps": [],
+      "assumptions": [],
+      "reproduce": "tools/calc.py check projects/family-connect CALC-0031"
+    },
+    {
+      "id": "CALC-0032",
+      "created_at": "2026-11-19T16:38:11+04:00",
+      "record_status": "active",
+      "inputs": [
+        {
+          "name": "нужно",
+          "calculation_id": "CALC-0026",
+          "value": 1750,
+          "unit": "оплаченных месяцев номера",
+          "period": "плановый год"
+        },
+        {
+          "name": "предел",
+          "calculation_id": "CALC-0020",
+          "value": 1512,
+          "unit": "оплаченных месяцев номера",
+          "period": "плановый год"
+        }
+      ],
+      "method": {
+        "kind": "tool",
+        "description": "Недостача оплаченных месяцев до окупаемости варианта A в плановом году даже при максимальном удержании",
+        "formula": "нужно - предел",
+        "digits": 0
+      },
+      "result": {
+        "status": "computed",
+        "value": 238,
+        "unit": "оплаченных месяцев номера",
+        "period": "плановый год"
+      },
+      "gaps": [],
+      "assumptions": [],
+      "reproduce": "tools/calc.py check projects/family-connect CALC-0032"
+    },
+    {
+      "id": "CALC-0033",
+      "created_at": "2026-11-19T16:38:11+04:00",
+      "record_status": "active",
+      "inputs": [
+        {
+          "name": "ставка",
+          "source_id": "SRC-0001",
+          "locator": {
+            "kind": "page",
+            "page": 9,
+            "quote": "по 500 руб."
+          },
+          "value": 500,
+          "unit": "руб. за оплаченный месяц номера",
+          "period": "плановый год"
+        }
+      ],
+      "method": {
+        "kind": "tool",
+        "description": "Оплаченные месяцы номера, которые нужны, чтобы окупить разработку варианта B (общий кабинет семьи), основной ход",
+        "formula": "9.5 * 250000 / ставка",
+        "digits": 0
+      },
+      "result": {
+        "status": "computed",
+        "value": 4750,
+        "unit": "оплаченных месяцев номера",
+        "period": "плановый год"
+      },
+      "gaps": [],
+      "assumptions": [
+        "Объём 9.5 человеко-месяцев: дизайн 1,5, разработка 6,0, проверка 1,5, аналитика 0,5 (допущение)",
+        "Ставка 250 000 руб. за человеко-месяц (допущение; ставки в брифе нет)"
+      ],
+      "reproduce": "tools/calc.py check projects/family-connect CALC-0033"
+    },
+    {
+      "id": "CALC-0034",
+      "created_at": "2026-11-19T16:38:12+04:00",
+      "record_status": "active",
+      "inputs": [
+        {
+          "name": "месяцы",
+          "calculation_id": "CALC-0033",
+          "value": 4750,
+          "unit": "оплаченных месяцев номера",
+          "period": "плановый год"
+        },
+        {
+          "name": "ставка",
+          "source_id": "SRC-0001",
+          "locator": {
+            "kind": "page",
+            "page": 9,
+            "quote": "по 500 руб."
+          },
+          "value": 500,
+          "unit": "руб. за оплаченный месяц номера",
+          "period": "плановый год"
+        }
+      ],
+      "method": {
+        "kind": "tool",
+        "description": "Затраты на разработку варианта B (общий кабинет семьи), основной ход",
+        "formula": "месяцы * ставка",
+        "digits": 0
+      },
+      "result": {
+        "status": "computed",
+        "value": 2375000,
+        "unit": "руб.",
+        "period": "плановый год"
+      },
+      "gaps": [],
+      "assumptions": [
+        "Тот же объём и ставка, что в расчёте оплаченных месяцев (допущение)"
+      ],
+      "reproduce": "tools/calc.py check projects/family-connect CALC-0034"
+    },
+    {
+      "id": "CALC-0035",
+      "created_at": "2026-11-19T16:38:14+04:00",
+      "record_status": "active",
+      "inputs": [
+        {
+          "name": "затраты",
+          "calculation_id": "CALC-0034",
+          "value": 2375000,
+          "unit": "руб.",
+          "period": "плановый год"
+        }
+      ],
+      "method": {
+        "kind": "tool",
+        "description": "Запас ресурса разработчиков на второй квартал для варианта B (общий кабинет семьи): ресурс минус потребность (отрицательное значение значит недостаток)",
+        "formula": "3 - затраты / 250000 * 6.0 / 9.5",
+        "digits": 2
+      },
+      "result": {
+        "status": "computed",
+        "value": -3,
+        "unit": "человеко-месяцев",
+        "period": "второй квартал планового года"
+      },
+      "gaps": [],
+      "assumptions": [
+        "Ресурс разработчиков 3 человеко-месяца на второй квартал названо в брифе (стр. 11)",
+        "Доля разработчиков в объёме: 6.0 из 9.5 человеко-месяцев (допущение)",
+        "Ставка 250 000 руб. за человеко-месяц (допущение; ставки в брифе нет)"
+      ],
+      "reproduce": "tools/calc.py check projects/family-connect CALC-0035"
+    },
+    {
+      "id": "CALC-0036",
+      "created_at": "2026-11-19T16:38:15+04:00",
+      "record_status": "active",
+      "inputs": [
+        {
+          "name": "ставка",
+          "source_id": "SRC-0001",
+          "locator": {
+            "kind": "page",
+            "page": 9,
+            "quote": "по 500 руб."
+          },
+          "value": 500,
+          "unit": "руб. за оплаченный месяц номера",
+          "period": "плановый год"
+        }
+      ],
+      "method": {
+        "kind": "tool",
+        "description": "Оплаченные месяцы номера, которые нужны, чтобы окупить разработку варианта C (изменение условий тарифа: автодобавление интернета из свободного остатка), основной ход",
+        "formula": "3.0 * 250000 / ставка",
+        "digits": 0
+      },
+      "result": {
+        "status": "computed",
+        "value": 1500,
+        "unit": "оплаченных месяцев номера",
+        "period": "плановый год"
+      },
+      "gaps": [],
+      "assumptions": [
+        "Объём 3.0 человеко-месяцев: дизайн 0,25, разработка 1,5, проверка 0,5, аналитика 0,25, согласование с финансами 0,5 (допущение)",
+        "Ставка 250 000 руб. за человеко-месяц (допущение; ставки в брифе нет)"
+      ],
+      "reproduce": "tools/calc.py check projects/family-connect CALC-0036"
+    },
+    {
+      "id": "CALC-0037",
+      "created_at": "2026-11-19T16:38:16+04:00",
+      "record_status": "active",
+      "inputs": [
+        {
+          "name": "месяцы",
+          "calculation_id": "CALC-0036",
+          "value": 1500,
+          "unit": "оплаченных месяцев номера",
+          "period": "плановый год"
+        },
+        {
+          "name": "ставка",
+          "source_id": "SRC-0001",
+          "locator": {
+            "kind": "page",
+            "page": 9,
+            "quote": "по 500 руб."
+          },
+          "value": 500,
+          "unit": "руб. за оплаченный месяц номера",
+          "period": "плановый год"
+        }
+      ],
+      "method": {
+        "kind": "tool",
+        "description": "Затраты на разработку варианта C (изменение условий тарифа: автодобавление интернета из свободного остатка), основной ход",
+        "formula": "месяцы * ставка",
+        "digits": 0
+      },
+      "result": {
+        "status": "computed",
+        "value": 750000,
+        "unit": "руб.",
+        "period": "плановый год"
+      },
+      "gaps": [],
+      "assumptions": [
+        "Тот же объём и ставка, что в расчёте оплаченных месяцев (допущение)"
+      ],
+      "reproduce": "tools/calc.py check projects/family-connect CALC-0037"
+    },
+    {
+      "id": "CALC-0038",
+      "created_at": "2026-11-19T16:38:18+04:00",
+      "record_status": "active",
+      "inputs": [
+        {
+          "name": "затраты",
+          "calculation_id": "CALC-0037",
+          "value": 750000,
+          "unit": "руб.",
+          "period": "плановый год"
+        }
+      ],
+      "method": {
+        "kind": "tool",
+        "description": "Запас ресурса разработчиков на второй квартал для варианта C (изменение условий тарифа: автодобавление интернета из свободного остатка): ресурс минус потребность (отрицательное значение значит недостаток)",
+        "formula": "3 - затраты / 250000 * 1.5 / 3.0",
+        "digits": 2
+      },
+      "result": {
+        "status": "computed",
+        "value": 1.5,
+        "unit": "человеко-месяцев",
+        "period": "второй квартал планового года"
+      },
+      "gaps": [],
+      "assumptions": [
+        "Ресурс разработчиков 3 человеко-месяца на второй квартал названо в брифе (стр. 11)",
+        "Доля разработчиков в объёме: 1.5 из 3.0 человеко-месяцев (допущение)",
+        "Ставка 250 000 руб. за человеко-месяц (допущение; ставки в брифе нет)"
+      ],
+      "reproduce": "tools/calc.py check projects/family-connect CALC-0038"
+    },
+    {
+      "id": "CALC-0039",
+      "created_at": "2026-11-19T16:38:18+04:00",
+      "record_status": "active",
+      "inputs": [
+        {
+          "name": "ставка",
+          "source_id": "SRC-0001",
+          "locator": {
+            "kind": "page",
+            "page": 9,
+            "quote": "по 500 руб."
+          },
+          "value": 500,
+          "unit": "руб. за оплаченный месяц номера",
+          "period": "плановый год"
+        }
+      ],
+      "method": {
+        "kind": "tool",
+        "description": "Оплаченные месяцы номера, которые нужны, чтобы окупить разработку варианта D (предупреждение владельцу нескольких номеров о платеже и остатке), основной ход",
+        "formula": "2.75 * 250000 / ставка",
+        "digits": 0
+      },
+      "result": {
+        "status": "computed",
+        "value": 1375,
+        "unit": "оплаченных месяцев номера",
+        "period": "плановый год"
+      },
+      "gaps": [],
+      "assumptions": [
+        "Объём 2.75 человеко-месяцев: дизайн 0,5, разработка 1,5, проверка 0,5, аналитика 0,25 (допущение)",
+        "Ставка 250 000 руб. за человеко-месяц (допущение; ставки в брифе нет)"
+      ],
+      "reproduce": "tools/calc.py check projects/family-connect CALC-0039"
+    },
+    {
+      "id": "CALC-0040",
+      "created_at": "2026-11-19T16:38:19+04:00",
+      "record_status": "active",
+      "inputs": [
+        {
+          "name": "месяцы",
+          "calculation_id": "CALC-0039",
+          "value": 1375,
+          "unit": "оплаченных месяцев номера",
+          "period": "плановый год"
+        },
+        {
+          "name": "ставка",
+          "source_id": "SRC-0001",
+          "locator": {
+            "kind": "page",
+            "page": 9,
+            "quote": "по 500 руб."
+          },
+          "value": 500,
+          "unit": "руб. за оплаченный месяц номера",
+          "period": "плановый год"
+        }
+      ],
+      "method": {
+        "kind": "tool",
+        "description": "Затраты на разработку варианта D (предупреждение владельцу нескольких номеров о платеже и остатке), основной ход",
+        "formula": "месяцы * ставка",
+        "digits": 0
+      },
+      "result": {
+        "status": "computed",
+        "value": 687500,
+        "unit": "руб.",
+        "period": "плановый год"
+      },
+      "gaps": [],
+      "assumptions": [
+        "Тот же объём и ставка, что в расчёте оплаченных месяцев (допущение)"
+      ],
+      "reproduce": "tools/calc.py check projects/family-connect CALC-0040"
+    },
+    {
+      "id": "CALC-0041",
+      "created_at": "2026-11-19T16:38:21+04:00",
+      "record_status": "active",
+      "inputs": [
+        {
+          "name": "затраты",
+          "calculation_id": "CALC-0040",
+          "value": 687500,
+          "unit": "руб.",
+          "period": "плановый год"
+        }
+      ],
+      "method": {
+        "kind": "tool",
+        "description": "Запас ресурса разработчиков на второй квартал для варианта D (предупреждение владельцу нескольких номеров о платеже и остатке): ресурс минус потребность (отрицательное значение значит недостаток)",
+        "formula": "3 - затраты / 250000 * 1.5 / 2.75",
+        "digits": 2
+      },
+      "result": {
+        "status": "computed",
+        "value": 1.5,
+        "unit": "человеко-месяцев",
+        "period": "второй квартал планового года"
+      },
+      "gaps": [],
+      "assumptions": [
+        "Ресурс разработчиков 3 человеко-месяца на второй квартал названо в брифе (стр. 11)",
+        "Доля разработчиков в объёме: 1.5 из 2.75 человеко-месяцев (допущение)",
+        "Ставка 250 000 руб. за человеко-месяц (допущение; ставки в брифе нет)"
+      ],
+      "reproduce": "tools/calc.py check projects/family-connect CALC-0041"
+    }
+  ]
+}

@@ -1,0 +1,111 @@
+{
+  "format_version": 1,
+  "id": "CKP-0005",
+  "case_id": "family-connect",
+  "created_at": "2026-11-19T16:42:48+04:00",
+  "seq": 5,
+  "previous": "CKP-0004",
+  "goal": "Подготовить стратегию продукта «Связь для близких и собственных устройств»: один документ из пяти частей с резюме, планом на год по кварталам и ориентиром на третий год",
+  "stage": "strategies",
+  "artifacts": [
+    {
+      "path": "brief.md",
+      "sha256": "665aa9f6f3aac7105d482b8214620e7b1a463973478b3d435d55d2a655b958a4"
+    },
+    {
+      "path": "decisions/decisions.json",
+      "sha256": "5c0259cbd85aafdfcaf9ef33bab45cac15f0cbcd9c45949355491c7b97fc1744"
+    },
+    {
+      "path": "decisions/options.json",
+      "sha256": "26702b4c60c61863524b3aea5a81ff6e01a20c78ceab588da6af386ff1d29965"
+    },
+    {
+      "path": "evidence/calculations.json",
+      "sha256": "7e03aedb05d71a9467262402d6dd25818db8b7dcea455e54daada08b5c2ee926"
+    },
+    {
+      "path": "evidence/claims.json",
+      "sha256": "287f102584d875bce3f5887ba7b1d5d1b9756c26e87e99a6f8365efef1d63dee"
+    },
+    {
+      "path": "evidence/sources.json",
+      "sha256": "db9f963f127e2acb5dfe78e95f3ffd35c0a2a384a9ea9fcb2c45d578208e55e5"
+    },
+    {
+      "path": "outputs/options.md",
+      "sha256": "691a8f7b574f01921d91591ccf65262cae926dc5d7f32a8d36e0a28d5ba34055"
+    },
+    {
+      "path": "research/questions.json",
+      "sha256": "38290f27cd49a3fdb06e93331830908c1d45f9dd5c02f1f4789981fa974bf3e8"
+    }
+  ],
+  "completed_actions": [
+    "ACT-0001",
+    "ACT-0002",
+    "ACT-0003",
+    "ACT-0004",
+    "ACT-0005",
+    "ACT-0007",
+    "ACT-0008",
+    "ACT-0011",
+    "ACT-0013",
+    "ACT-0014",
+    "ACT-0018",
+    "ACT-0019",
+    "ACT-0020",
+    "ACT-0021",
+    "ACT-0022",
+    "ACT-0023",
+    "ACT-0024",
+    "ACT-0025",
+    "ACT-0026",
+    "ACT-0027",
+    "ACT-0028",
+    "ACT-0029",
+    "ACT-0030",
+    "ACT-0031",
+    "ACT-0032",
+    "ACT-0033",
+    "ACT-0034",
+    "ACT-0035",
+    "ACT-0036",
+    "ACT-0037",
+    "ACT-0038",
+    "ACT-0039",
+    "ACT-0041",
+    "ACT-0042",
+    "ACT-0044",
+    "ACT-0045",
+    "ACT-0046",
+    "ACT-0047",
+    "ACT-0048",
+    "ACT-0050",
+    "ACT-0051",
+    "ACT-0052",
+    "ACT-0054",
+    "ACT-0055",
+    "ACT-0056",
+    "ACT-0058",
+    "ACT-0059",
+    "ACT-0060"
+  ],
+  "human_choices": [
+    "DEC-0001",
+    "DEC-0002",
+    "DEC-0003"
+  ],
+  "open_items": [
+    "Стратегии не написаны"
+  ],
+  "next_step": "Написать стратегии, план проверки и обязательства",
+  "totals": {
+    "elapsed_seconds": 648,
+    "time_to_first_result_seconds": 603,
+    "human_active_seconds": null,
+    "cost": {
+      "basis": "unknown"
+    }
+  }
+}

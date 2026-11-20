@@ -1,0 +1,226 @@
+{
+  "format_version": 1,
+  "id": "CKP-0009",
+  "case_id": "family-connect",
+  "created_at": "2026-11-19T17:04:51+04:00",
+  "seq": 9,
+  "previous": "CKP-0008",
+  "goal": "Подготовить стратегию продукта «Связь для близких и собственных устройств»: один документ из пяти частей с резюме, планом на год по кварталам и ориентиром на третий год",
+  "stage": "done",
+  "artifacts": [
+    {
+      "path": "brief.md",
+      "sha256": "665aa9f6f3aac7105d482b8214620e7b1a463973478b3d435d55d2a655b958a4"
+    },
+    {
+      "path": "decisions/decisions.json",
+      "sha256": "ceca1892ad1175fc055e23a180729d836e6ab28ae8f7e5c5e820a8146bdaf705"
+    },
+    {
+      "path": "decisions/options.json",
+      "sha256": "26702b4c60c61863524b3aea5a81ff6e01a20c78ceab588da6af386ff1d29965"
+    },
+    {
+      "path": "evidence/calculations.json",
+      "sha256": "2c87fdf7818b8bcbd72965e13400ceaa2ac8c4f1e4b1ccc4ff02373cdeb85957"
+    },
+    {
+      "path": "evidence/claims.json",
+      "sha256": "2d00d0a3fdb19b05c6d553f201b9e1193acadb891093aec5143f0184d57ddf1b"
+    },
+    {
+      "path": "evidence/sources.json",
+      "sha256": "db9f963f127e2acb5dfe78e95f3ffd35c0a2a384a9ea9fcb2c45d578208e55e5"
+    },
+    {
+      "path": "outputs/accounting.md",
+      "sha256": "15faf31c28e81678efb84609df209d4fd4e7a6af13091cafa60b20a3efbf9e05"
+    },
+    {
+      "path": "outputs/commitments.md",
+      "sha256": "6a328f681948c76f3072a0e08b1b9d5c9fc5caab79f15317c238e0951f52dd3b"
+    },
+    {
+      "path": "outputs/communication-strategy.md",
+      "sha256": "81a9e6a1fb8a3d841b56941d18d0b3119a9850e6e291e97e45f4c9249aa80cbd"
+    },
+    {
+      "path": "outputs/deliverable.md",
+      "sha256": "6a35a58504e48ffc0df8e0ded02ef8d35ea0b1831d1bc736f719847dc0dcf1e6"
+    },
+    {
+      "path": "outputs/options.md",
+      "sha256": "2223f475364bf4eabd38b1e339a889ce70903b722fc31b357b7df571953e56b5"
+    },
+    {
+      "path": "outputs/product-strategy.md",
+      "sha256": "e755aa35912ef7e02dfeb0f110520455da58e7baf17e3c18cbe75610f969b38f"
+    },
+    {
+      "path": "outputs/validation-plan.md",
+      "sha256": "332e761b42c277b88414c2b0dc116edc87bccfddcbaa0878a6b1f23e4006580c"
+    },
+    {
+      "path": "research/questions.json",
+      "sha256": "38290f27cd49a3fdb06e93331830908c1d45f9dd5c02f1f4789981fa974bf3e8"
+    },
+    {
+      "path": "team.md",
+      "sha256": "6a8a685c0a20491e0c3f7d08fedacce8d848f386ef6e3008839a3f0f07321005"
+    }
+  ],
+  "completed_actions": [
+    "ACT-0001",
+    "ACT-0002",
+    "ACT-0003",
+    "ACT-0004",
+    "ACT-0005",
+    "ACT-0007",
+    "ACT-0008",
+    "ACT-0011",
+    "ACT-0013",
+    "ACT-0014",
+    "ACT-0018",
+    "ACT-0019",
+    "ACT-0020",
+    "ACT-0021",
+    "ACT-0022",
+    "ACT-0023",
+    "ACT-0024",
+    "ACT-0025",
+    "ACT-0026",
+    "ACT-0027",
+    "ACT-0028",
+    "ACT-0029",
+    "ACT-0030",
+    "ACT-0031",
+    "ACT-0032",
+    "ACT-0033",
+    "ACT-0034",
+    "ACT-0035",
+    "ACT-0036",
+    "ACT-0037",
+    "ACT-0038",
+    "ACT-0039",
+    "ACT-0041",
+    "ACT-0042",
+    "ACT-0044",
+    "ACT-0045",
+    "ACT-0046",
+    "ACT-0047",
+    "ACT-0048",
+    "ACT-0050",
+    "ACT-0051",
+    "ACT-0052",
+    "ACT-0054",
+    "ACT-0055",
+    "ACT-0056",
+    "ACT-0058",
+    "ACT-0059",
+    "ACT-0060",
+    "ACT-0061",
+    "ACT-0062",
+    "ACT-0063",
+    "ACT-0066",
+    "ACT-0067",
+    "ACT-0068",
+    "ACT-0069",
+    "ACT-0070",
+    "ACT-0071",
+    "ACT-0072",
+    "ACT-0073",
+    "ACT-0074",
+    "ACT-0075",
+    "ACT-0076",
+    "ACT-0077",
+    "ACT-0078",
+    "ACT-0079",
+    "ACT-0080",
+    "ACT-0081",
+    "ACT-0082",
+    "ACT-0083",
+    "ACT-0084",
+    "ACT-0085",
+    "ACT-0086",
+    "ACT-0087",
+    "ACT-0088",
+    "ACT-0089",
+    "ACT-0090",
+    "ACT-0091",
+    "ACT-0092",
+    "ACT-0093",
+    "ACT-0094",
+    "ACT-0095",
+    "ACT-0096",
+    "ACT-0097",
+    "ACT-0098",
+    "ACT-0099",
+    "ACT-0100",
+    "ACT-0102",
+    "ACT-0103",
+    "ACT-0104",
+    "ACT-0105",
+    "ACT-0106",
+    "ACT-0107",
+    "ACT-0108",
+    "ACT-0109",
+    "ACT-0110",
+    "ACT-0111",
+    "ACT-0112",
+    "ACT-0113",
+    "ACT-0114",
+    "ACT-0115",
+    "ACT-0116",
+    "ACT-0125",
+    "ACT-0126",
+    "ACT-0127",
+    "ACT-0128",
+    "ACT-0130",
+    "ACT-0132",
+    "ACT-0139",
+    "ACT-0140",
+    "ACT-0141",
+    "ACT-0142",
+    "ACT-0143",
+    "ACT-0144",
+    "ACT-0145",
+    "ACT-0146",
+    "ACT-0147",
+    "ACT-0148",
+    "ACT-0149",
+    "ACT-0150",
+    "ACT-0151",
+    "ACT-0152",
+    "ACT-0153",
+    "ACT-0154",
+    "ACT-0155",
+    "ACT-0156",
+    "ACT-0157",
+    "ACT-0158"
+  ],
+  "human_choices": [
+    "DEC-0001",
+    "DEC-0002",
+    "DEC-0003",
+    "DEC-0004",
+    "DEC-0005"
+  ],
+  "open_items": [
+    "Данные клиентов не даны: частоты причин, приток и отток групп, удержание, доля прибыли от семейной услуги; допущения помечены в документах",
+    "Пороги и сроки согласованы как допущения"
+  ],
+  "next_step": null,
+  "totals": {
+    "elapsed_seconds": 1894,
+    "time_to_first_result_seconds": 603,
+    "human_active_seconds": 1500,
+    "cost": {
+      "basis": "measured",
+      "amounts": {
+        "input_tokens": null,
+        "output_tokens": null,
+        "money_usd": 5.17
+      }
+    }
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "format_version": 1,
+  "id": "CKP-0001",
+  "case_id": "family-connect",
+  "created_at": "2026-11-19T16:32:38+04:00",
+  "seq": 1,
+  "previous": null,
+  "goal": "Подготовить стратегию продукта «Связь для близких и собственных устройств»: один документ из пяти частей с резюме, планом на год по кварталам и ориентиром на третий год",
+  "stage": "intake",
+  "artifacts": [
+    {
+      "path": "brief.md",
+      "sha256": "665aa9f6f3aac7105d482b8214620e7b1a463973478b3d435d55d2a655b958a4"
+    },
+    {
+      "path": "evidence/sources.json",
+      "sha256": "db9f963f127e2acb5dfe78e95f3ffd35c0a2a384a9ea9fcb2c45d578208e55e5"
+    }
+  ],
+  "completed_actions": [
+    "ACT-0001"
+  ],
+  "human_choices": [],
+  "open_items": [
+    "Бриф ждёт утверждения"
+  ],
+  "next_step": "Получить утверждение брифа и начать исследование по материалу брифа",
+  "totals": {
+    "elapsed_seconds": 5,
+    "time_to_first_result_seconds": null,
+    "human_active_seconds": null,
+    "cost": {
+      "basis": "unknown"
+    }
+  }
+}

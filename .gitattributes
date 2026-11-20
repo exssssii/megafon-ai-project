@@ -7,3 +7,4 @@ agent/contracts/examples/** -text
 .codex/agents/*.toml text eol=lf
 .claude/skills/**/SKILL.md text eol=lf
 .agents/skills/**/SKILL.md text eol=lf
+demo/family-connect/** -text

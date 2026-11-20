@@ -1,0 +1,24 @@
+{
+  "format_version": 1,
+  "records": [
+    {
+      "id": "SRC-0001",
+      "created_at": "2026-11-19T16:32:01+04:00",
+      "record_status": "active",
+      "type": "pdf",
+      "title": "Бриф «Связь для близких и собственных устройств»",
+      "location": {
+        "path": "sources/brief.pdf"
+      },
+      "origin": "user_provided",
+      "allowed": true,
+      "retrieved_at": "2026-11-19T16:32:01+04:00",
+      "sha256": "558d2c665caa4f4954135c8bbfb69d791e398dcdc5b625d5ded7bdb2d0eb0fa5",
+      "extraction": {
+        "status": "ok",
+        "complete": true,
+        "limits": "Прочитан в границах формата. Прочитано 11 из 11 страниц. Изображения не разбираются."
+      }
+    }
+  ]
+}

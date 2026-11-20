@@ -1,0 +1,192 @@
+{
+  "format_version": 1,
+  "id": "CKP-0006",
+  "case_id": "family-connect",
+  "created_at": "2026-11-19T16:53:12+04:00",
+  "seq": 6,
+  "previous": "CKP-0005",
+  "goal": "Подготовить стратегию продукта «Связь для близких и собственных устройств»: один документ из пяти частей с резюме, планом на год по кварталам и ориентиром на третий год",
+  "stage": "strategies",
+  "artifacts": [
+    {
+      "path": "brief.md",
+      "sha256": "665aa9f6f3aac7105d482b8214620e7b1a463973478b3d435d55d2a655b958a4"
+    },
+    {
+      "path": "decisions/decisions.json",
+      "sha256": "5c0259cbd85aafdfcaf9ef33bab45cac15f0cbcd9c45949355491c7b97fc1744"
+    },
+    {
+      "path": "decisions/options.json",
+      "sha256": "26702b4c60c61863524b3aea5a81ff6e01a20c78ceab588da6af386ff1d29965"
+    },
+    {
+      "path": "evidence/calculations.json",
+      "sha256": "ac372516de3716df0a2efbe1d8ab8d6692bf1aa39bc444e21e333d43360ad2bd"
+    },
+    {
+      "path": "evidence/claims.json",
+      "sha256": "91ea5fbcc01c0a3a7ea17ff081c61c1ae5c87702b8c9ea29ef838a86bca68009"
+    },
+    {
+      "path": "evidence/sources.json",
+      "sha256": "db9f963f127e2acb5dfe78e95f3ffd35c0a2a384a9ea9fcb2c45d578208e55e5"
+    },
+    {
+      "path": "outputs/accounting.md",
+      "sha256": "c7ec4bb6101f2e8c851e4735dd9975cd64c9f4083a5bc7194b2eb87f0806b5a3"
+    },
+    {
+      "path": "outputs/communication-strategy.md",
+      "sha256": "74b58923c029e2a83a4d8f3260433b1f9437f76d8bff01b57fe743f943d93763"
+    },
+    {
+      "path": "outputs/options.md",
+      "sha256": "691a8f7b574f01921d91591ccf65262cae926dc5d7f32a8d36e0a28d5ba34055"
+    },
+    {
+      "path": "outputs/product-strategy.md",
+      "sha256": "e755aa35912ef7e02dfeb0f110520455da58e7baf17e3c18cbe75610f969b38f"
+    },
+    {
+      "path": "outputs/validation-plan.md",
+      "sha256": "0f418a8dc79a2454656a3332e60c110a864c50ec45948176a9c962b357d323b5"
+    },
+    {
+      "path": "research/questions.json",
+      "sha256": "38290f27cd49a3fdb06e93331830908c1d45f9dd5c02f1f4789981fa974bf3e8"
+    }
+  ],
+  "completed_actions": [
+    "ACT-0001",
+    "ACT-0002",
+    "ACT-0003",
+    "ACT-0004",
+    "ACT-0005",
+    "ACT-0007",
+    "ACT-0008",
+    "ACT-0011",
+    "ACT-0013",
+    "ACT-0014",
+    "ACT-0018",
+    "ACT-0019",
+    "ACT-0020",
+    "ACT-0021",
+    "ACT-0022",
+    "ACT-0023",
+    "ACT-0024",
+    "ACT-0025",
+    "ACT-0026",
+    "ACT-0027",
+    "ACT-0028",
+    "ACT-0029",
+    "ACT-0030",
+    "ACT-0031",
+    "ACT-0032",
+    "ACT-0033",
+    "ACT-0034",
+    "ACT-0035",
+    "ACT-0036",
+    "ACT-0037",
+    "ACT-0038",
+    "ACT-0039",
+    "ACT-0041",
+    "ACT-0042",
+    "ACT-0044",
+    "ACT-0045",
+    "ACT-0046",
+    "ACT-0047",
+    "ACT-0048",
+    "ACT-0050",
+    "ACT-0051",
+    "ACT-0052",
+    "ACT-0054",
+    "ACT-0055",
+    "ACT-0056",
+    "ACT-0058",
+    "ACT-0059",
+    "ACT-0060",
+    "ACT-0061",
+    "ACT-0062",
+    "ACT-0063",
+    "ACT-0066",
+    "ACT-0067",
+    "ACT-0068",
+    "ACT-0069",
+    "ACT-0070",
+    "ACT-0071",
+    "ACT-0072",
+    "ACT-0073",
+    "ACT-0074",
+    "ACT-0075",
+    "ACT-0076",
+    "ACT-0077",
+    "ACT-0078",
+    "ACT-0079",
+    "ACT-0080",
+    "ACT-0081",
+    "ACT-0082",
+    "ACT-0083",
+    "ACT-0084",
+    "ACT-0085",
+    "ACT-0086",
+    "ACT-0087",
+    "ACT-0088",
+    "ACT-0089",
+    "ACT-0090",
+    "ACT-0091",
+    "ACT-0092",
+    "ACT-0093",
+    "ACT-0094",
+    "ACT-0095",
+    "ACT-0096",
+    "ACT-0097",
+    "ACT-0098",
+    "ACT-0099",
+    "ACT-0100",
+    "ACT-0102",
+    "ACT-0103",
+    "ACT-0104",
+    "ACT-0105",
+    "ACT-0106",
+    "ACT-0107",
+    "ACT-0108",
+    "ACT-0109",
+    "ACT-0110",
+    "ACT-0111",
+    "ACT-0112",
+    "ACT-0113",
+    "ACT-0114",
+    "ACT-0115",
+    "ACT-0116",
+    "ACT-0125",
+    "ACT-0126",
+    "ACT-0127",
+    "ACT-0128",
+    "ACT-0130",
+    "ACT-0132",
+    "ACT-0139",
+    "ACT-0140",
+    "ACT-0141",
+    "ACT-0142",
+    "ACT-0143",
+    "ACT-0144"
+  ],
+  "human_choices": [
+    "DEC-0001",
+    "DEC-0002",
+    "DEC-0003"
+  ],
+  "open_items": [
+    "Стратегии написаны"
+  ],
+  "next_step": "Проверить план проверки и задать вопрос о составе команды",
+  "totals": {
+    "elapsed_seconds": 1108,
+    "time_to_first_result_seconds": 603,
+    "human_active_seconds": null,
+    "cost": {
+      "basis": "unknown"
+    }
+  }
+}

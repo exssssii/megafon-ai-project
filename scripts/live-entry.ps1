@@ -299,7 +299,8 @@ if ($Suite -eq 'entry') {
     foreach ($name in $extra) { Copy-Item -LiteralPath (Join-Path $clone "examples\$caseId\extra\$name") -Destination $held }
     $hidden = @((Get-ChildItem -LiteralPath (Join-Path $clone 'docs') -Force |
             Where-Object { $_.Name -ne 'development-rules.md' } | ForEach-Object { "docs\$($_.Name)" })) +
-        @('examples', 'tools\make_acceptance_cases.py', 'tests', 'scripts', '.git')
+        # demo holds a finished family-connect case: the answer of that run.
+        @('examples', 'demo', 'tools\make_acceptance_cases.py', 'tests', 'scripts', '.git')
     foreach ($path in $hidden) { Remove-Item -LiteralPath (Join-Path $clone $path) -Recurse -Force }
     foreach ($path in $hidden) { if (Test-Path -LiteralPath (Join-Path $clone $path)) { throw "Still in the clone: $path" } }
     if ($PlainChat) {
