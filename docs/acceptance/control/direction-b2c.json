@@ -1,0 +1,167 @@
+{
+  "case_id": "direction-b2c",
+  "checked_on": "2026-11-05",
+  "unavailable_url": "https://report.example.invalid/",
+  "numbers": [
+    {
+      "id": "conversion_diary_own_base",
+      "label": "Конверсия в оплату на своей базе, Дневник питомца",
+      "value": 1.2,
+      "unit": "%",
+      "period": "недели 1–11",
+      "formula": "оплатили / показано",
+      "where": "pilot-funnel.csv, строки 2–12",
+      "rounding": "два знака после запятой",
+      "tolerance": 0.05
+    },
+    {
+      "id": "conversion_diary_common_base",
+      "label": "Конверсия в оплату на всех активных, Дневник питомца",
+      "value": 1.2,
+      "unit": "%",
+      "period": "недели 1–11",
+      "formula": "оплатили / активных всего",
+      "where": "pilot-funnel.csv, строки 2–12",
+      "rounding": "два знака после запятой",
+      "tolerance": 0.05
+    },
+    {
+      "id": "margin_diary_per_payer",
+      "label": "Маржа на одну оплату, Дневник питомца",
+      "value": 119,
+      "unit": "руб.",
+      "period": "недели 1–11",
+      "formula": "(выручка − прямые затраты) / оплатили",
+      "where": "pilot-funnel.csv, строки 2–12",
+      "rounding": "целое",
+      "tolerance": 1
+    },
+    {
+      "id": "conversion_chat_own_base",
+      "label": "Конверсия в оплату на своей базе, Чат с ветеринаром",
+      "value": 9.48,
+      "unit": "%",
+      "period": "недели 1–11",
+      "formula": "оплатили / показано",
+      "where": "pilot-funnel.csv, строки 26–36",
+      "rounding": "два знака после запятой",
+      "tolerance": 0.05
+    },
+    {
+      "id": "conversion_chat_common_base",
+      "label": "Конверсия в оплату на всех активных, Чат с ветеринаром",
+      "value": 1.52,
+      "unit": "%",
+      "period": "недели 1–11",
+      "formula": "оплатили / активных всего",
+      "where": "pilot-funnel.csv, строки 26–36",
+      "rounding": "два знака после запятой",
+      "tolerance": 0.05
+    },
+    {
+      "id": "margin_chat_per_payer",
+      "label": "Маржа на одну оплату, Чат с ветеринаром",
+      "value": -121,
+      "unit": "руб.",
+      "period": "недели 1–11",
+      "formula": "(выручка − прямые затраты) / оплатили",
+      "where": "pilot-funnel.csv, строки 26–36",
+      "rounding": "целое",
+      "tolerance": 1
+    },
+    {
+      "id": "board_chat_common_base",
+      "label": "Конверсия чата на всех активных, значение записки",
+      "value": 1.52,
+      "unit": "%",
+      "period": "недели 1–8",
+      "formula": "оплатили / активных всего",
+      "where": "extra/board-note.docx",
+      "rounding": "два знака после запятой",
+      "tolerance": 0.05
+    },
+    {
+      "id": "paid_diary_complete_weeks",
+      "label": "Оплат дневника за полные недели",
+      "value": 2699,
+      "unit": "оплат",
+      "period": "недели 1–11",
+      "formula": "сумма оплат",
+      "where": "pilot-funnel.csv, строки 2–12",
+      "rounding": "целое",
+      "tolerance": 0
+    },
+    {
+      "id": "paid_chat_complete_weeks",
+      "label": "Оплат чата за полные недели",
+      "value": 3420,
+      "unit": "оплат",
+      "period": "недели 1–11",
+      "formula": "сумма оплат",
+      "where": "pilot-funnel.csv, строки 26–36",
+      "rounding": "целое",
+      "tolerance": 0
+    },
+    {
+      "id": "survey_response_rate",
+      "label": "Доля ответивших в опросе",
+      "value": 4.0,
+      "unit": "%",
+      "period": "опрос",
+      "formula": "ответили / приглашение показано",
+      "where": "pilot-report.pdf, страница 1",
+      "rounding": "два знака после запятой",
+      "tolerance": 0.05
+    },
+    {
+      "id": "survey_sample",
+      "label": "Размер выборки опроса",
+      "value": 212,
+      "unit": "ответов",
+      "period": "опрос",
+      "formula": "из сводки",
+      "where": "pilot-report.pdf, страница 1",
+      "rounding": "целое",
+      "tolerance": 0
+    }
+  ],
+  "not_computable": [
+    {
+      "id": "tried_rate_reminders_week_7",
+      "label": "Доля попробовавших напоминания, неделя 7",
+      "reason": "Показов было ноль"
+    },
+    {
+      "id": "week_12_totals",
+      "label": "Итоги недели 12 как полной недели",
+      "reason": "Данные только за 3 дня"
+    },
+    {
+      "id": "margin_reminders_per_payer",
+      "label": "Маржа на одну оплату, напоминания",
+      "reason": "Оплат не было"
+    }
+  ],
+  "site_facts": [
+    {
+      "url": "https://wciom.ru/analytical-reviews/analiticheskii-obzor/koshki-sobaki-i-vse-vse-vse",
+      "fact": "70% имеют питомцев, 43% владельцев тратят более 3 тыс. руб. в месяц",
+      "section": "«Братья наши меньшие», «Инфраструктура заботы»",
+      "checked_on": "2026-11-05",
+      "limit": "Опрос по заказу сети зоомагазинов, январь 2025"
+    },
+    {
+      "url": "https://t-j.ru/short/online-veterinary/",
+      "fact": "Пять сервисов онлайн-консультаций",
+      "section": "разделы по сервисам",
+      "checked_on": "2026-11-05",
+      "limit": "Цен в статье нет, отзывы не проверены"
+    }
+  ],
+  "impossible": {
+    "requirement": "Выйти в прибыль за месяц без бюджета",
+    "fixed_monthly_rub": 1400000,
+    "best_month_margin_rub": 127568,
+    "formula": "лучшая полная неделя положительной маржи × 4 против постоянных расходов"
+  }
+}

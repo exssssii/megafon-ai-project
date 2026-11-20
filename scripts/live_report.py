@@ -32,7 +32,7 @@ REDIRECT = re.compile(r"(?:\s+(?:\d?>>?|&>)\s*\S+)+\s*$")
 HEREDOC = re.compile(r"""<<-?\s*(['"]?)(\w+)\1[^\n]*\n(.*?)(?:\n[ \t]*\2[ \t]*(?=\r?\n|$)|\Z)""", re.DOTALL)
 HERESTRING = re.compile(r"""@(['"])[ \t]*\r?\n(.*?)(?:\r?\n\1@|\Z)""", re.DOTALL)
 HIDDEN = (r"docs[\\/]+acceptance|make_acceptance_cases|(?:retention-smb|direction-b2c|family-connect)\.json"
-          r"|examples[\\/]+(?:retention-smb|direction-b2c|family-connect)|demo[\\/]+family-connect|megafon-AI-agent-hack|[\\/]results[\\/]|[\\/]held[\\/]|live-held-"
+          r"|examples[\\/]+(?:retention-smb|direction-b2c|family-connect)|demo[\\/]+family-connect|megafon-ai-project|[\\/]results[\\/]|[\\/]held[\\/]|live-held-"
           r"|handoff-(?:final-)?(?:claude|codex)|handoff-(?:pack|in)")
 PATH_KEYS = ("file_path", "path", "notebook_path", "pattern", "glob")
 

@@ -1,0 +1,180 @@
+{
+  "date": "2026-11-05",
+  "source_revision": "05dd3f26c8f4b08e109ff8e9b700a6adf23c4d85",
+  "scope": "B02 environment probe; not product acceptance or U01 completion",
+  "environment": {
+    "os": "Windows 11",
+    "app": "26.1027.3384.0",
+    "cli": "0.166.0-alpha.5.1",
+    "python": "3.12.10",
+    "uv": "0.12.15",
+    "powershell": "7.6.5",
+    "authentication": "Existing ChatGPT login; credentials not read or exported",
+    "model_requested": "gpt-6.1-sol",
+    "reasoning_requested": "low",
+    "actual_model_returned": false,
+    "user_config_loaded": false,
+    "plugins_used": [],
+    "api_keys_used": false,
+    "network_tool": "Built-in web.run; web_search=live",
+    "human_help": "No intervention within the accepted run; invocation mode selected between complete attempts"
+  },
+  "prompt": "tools/probe_prompt.md",
+  "clean_copy": "Tracked tools/, tests/fixtures/, pyproject.toml, uv.lock and .python-version; fresh uv sync --locked",
+  "inputs": [
+    {
+      "file": "probe-document.docx",
+      "sha256": "b06a181769fdeddc40327734be93b04c385936b9e67ab9a119c0116fd77777ac"
+    },
+    {
+      "file": "probe-document.pdf",
+      "sha256": "5a876d374aa2fe3d0510745bad237095a2663ce2d7642854b080862ea9154cef"
+    },
+    {
+      "file": "probe-note.md",
+      "sha256": "dd0f5c07f53bdb088cd652b1ef4711687263a1b7e7e7d68f72cdc4f8befd0dc6"
+    },
+    {
+      "file": "probe-table.csv",
+      "sha256": "c75c339959b8bfa92cabae5a42c09c0f49d74238f25c486971384972a4d3d93c"
+    },
+    {
+      "file": "probe-table.xlsx",
+      "sha256": "504553ef7988617624570d53eedd4706524083c5d4ff61cabe9470aa44a302dc"
+    }
+  ],
+  "runs": [
+    {
+      "mode": "read-only",
+      "passed": false,
+      "process_exit_code": 0,
+      "seconds": 28.7,
+      "usage": {
+        "input_tokens": 74965,
+        "cached_input_tokens": 57984,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 669,
+        "reasoning_output_tokens": 0
+      },
+      "limitation": "All four parser commands rejected before execution: blocked by policy."
+    },
+    {
+      "mode": "workspace-write",
+      "passed": false,
+      "process_exit_code": 0,
+      "seconds": 30.5,
+      "usage": {
+        "input_tokens": 83076,
+        "cached_input_tokens": 61952,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 688,
+        "reasoning_output_tokens": 0
+      },
+      "limitation": "All four parser commands rejected before execution: blocked by policy."
+    },
+    {
+      "mode": "approve-for-me",
+      "passed": true,
+      "process_exit_code": 0,
+      "seconds": 48.7,
+      "usage": {
+        "input_tokens": 110838,
+        "cached_input_tokens": 87808,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 738,
+        "reasoning_output_tokens": 0
+      },
+      "limitation": "Unavailable URL returned Internal Error without HTTP status; CSV encoding is assumed."
+    }
+  ],
+  "accepted_started_at_utc": "2026-11-05T06:23:46.5714526Z",
+  "accepted_result": {
+    "markers": [
+      "ДОК-7Q3",
+      "ДОКТАБ-4K9",
+      "ПДФ-2M8",
+      "ТАБ-9X1",
+      "ЦСВ-5T2"
+    ],
+    "cell_b3": {
+      "cell": "Выручка!B3",
+      "value": 1284
+    },
+    "formula_without_value": "Выручка!C3",
+    "web_title": "RFC 9110: HTTP Semantics",
+    "web_get_section": {
+      "section": "9.3.1",
+      "source": "[RFC 9110](https://www.rfc-editor.org/rfc/rfc9110.html#section-9.3.1)"
+    },
+    "search_url": "https://www.rfc-editor.org/rfc/rfc9110.html",
+    "unavailable_result": {
+      "url": "https://www.rfc-editor.org/rfc/rfc0000000.html",
+      "result": "Инструмент вернул Internal Error: URL недоступен через этот инструмент. HTTP-статус не предоставлен."
+    },
+    "budget_result": {
+      "pages_read": 1,
+      "read_url": "https://example.com/",
+      "title": "Example Domain",
+      "source": "[Example Domain](https://example.com/)",
+      "budget": "Исчерпан",
+      "unchecked": "https://example.org/ не открывался; его заголовок не проверен."
+    },
+    "tools_used": [
+      "functions.exec",
+      "exec_command: четыре запуска .venv/Scripts/python.exe tools/probe_read.py",
+      "web.run: open, search_query (один запрос), find"
+    ],
+    "problems": [
+      "Кодировка CSV определена предположительно как cp1251.",
+      "В CSV обнаружена одна пустая ячейка.",
+      "У Выручка!C3 отсутствует сохранённое значение формулы.",
+      "Недоступную страницу инструмент открыть не смог."
+    ]
+  },
+  "accepted_parser_outputs": [
+    {
+      "exit_code": 0,
+      "output": "{\"path\": \"probe-document.docx\", \"status\": \"ok\", \"complete\": true, \"bytes\": 36928, \"paragraphs\": 2, \"tables\": 1, \"lines_total\": 4, \"lines_shown\": 4}\r\n[P1] Проверочный документ\r\n[P2] Контрольный абзац: маркер ДОК-7Q3 подтверждает чтение текста.\r\n[T1R1] Показатель | Значение\r\n[T1R2] Маркер таблицы | ДОКТАБ-4K9\r\n"
+    },
+    {
+      "exit_code": 0,
+      "output": "{\"path\": \"probe-document.pdf\", \"status\": \"ok\", \"complete\": true, \"bytes\": 19973, \"pages\": 2, \"pages_without_text\": 0, \"lines_total\": 2, \"lines_shown\": 2}\r\n[p.1] Первая страница проверочного документа.\r\n[p.2] Вторая страница: маркер ПДФ-2M8 подтверждает постраничное чтение.\r\n"
+    },
+    {
+      "exit_code": 0,
+      "output": "{\"path\": \"probe-table.xlsx\", \"status\": \"ok\", \"complete\": true, \"bytes\": 5546, \"sheets\": [{\"name\": \"Выручка\", \"rows\": 3}, {\"name\": \"Заметки\", \"rows\": 1}], \"formulas_without_value\": [\"Выручка!C3\"], \"lines_total\": 10, \"lines_shown\": 10}\r\n[Выручка!A1] Месяц\r\n[Выручка!B1] Сумма, руб.\r\n[Выручка!C1] Итог нарастающим\r\n[Выручка!A2] Январь\r\n[Выручка!B2] 1200\r\n[Выручка!C2] 1200\r\n[Выручка!A3] Февраль\r\n[Выручка!B3] 1284\r\n[Выручка!C3] <formula without cached value>\r\n[Заметки!A1] Маркер листа ТАБ-9X1\r\n"
+    },
+    {
+      "exit_code": 0,
+      "output": "{\"path\": \"probe-table.csv\", \"status\": \"ok\", \"complete\": true, \"bytes\": 57, \"encoding\": \"cp1251\", \"encoding_assumed\": true, \"delimiter\": \";\", \"delimiter_assumed\": false, \"rows\": 4, \"empty_cells\": 1, \"lines_total\": 4, \"lines_shown\": 4}\r\n[R1] Месяц | Клиенты\r\n[R2] Январь | 410\r\n[R3] Февраль | \r\n[R4] Маркер ЦСВ-5T2 | 437\r\n"
+    }
+  ],
+  "cost": {
+    "money": "Unknown; ChatGPT subscription, not a separately configured paid API",
+    "usage_scope": "CLI turn.completed counters per attempt; not Plus allowance or full automatic-review overhead",
+    "first_useful_result_seconds": null
+  },
+  "accepted_web_observations": [
+    {
+      "title": "RFC 9110: HTTP Semantics",
+      "url": "https://www.rfc-editor.org/rfc/rfc9110.html",
+      "snippet": "Total lines: 7447"
+    },
+    {
+      "title": "Internal Error",
+      "url": null,
+      "snippet": null
+    },
+    {
+      "title": "Example Domain",
+      "url": "https://example.com/",
+      "snippet": "Total lines: 1"
+    },
+    {
+      "title": "RFC 9110: HTTP Semantics",
+      "url": "https://www.rfc-editor.org/rfc/rfc9110.html",
+      "snippet": "Total lines: 7447"
+    }
+  ],
+  "web_evidence_limit": "CLI serialized search and find actions plus page-result summaries, not individual open actions. The failed URL and the statement that example.org was not opened come from the model final JSON; page summaries include RFC, Internal Error without status, and example.com, and are consistent with it."
+}

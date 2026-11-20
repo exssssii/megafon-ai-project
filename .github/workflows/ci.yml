@@ -17,7 +17,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 10
+    timeout-minutes: 25
     defaults:
       run:
         shell: pwsh
@@ -69,6 +69,15 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "Dry run failed: plain chat in $environment" }
             pwsh -NoProfile -File scripts/live-entry.ps1 -Environment $environment -Suite hard -NoReviewer -DryRun -Work (Join-Path $work "noreviewer-$environment")
             if ($LASTEXITCODE -ne 0) { throw "Dry run failed: hard without the reviewer in $environment" }
+            pwsh -NoProfile -File scripts/live-entry.ps1 -Environment $environment -Suite interviews -NoRouting -DryRun -Work (Join-Path $work "norouting-$environment")
+            if ($LASTEXITCODE -ne 0) { throw "Dry run failed: interviews without routing in $environment" }
+          }
+          # The script takes the brief of family-connect from outside the repository: a generated file stands in for it.
+          $brief = Join-Path $env:RUNNER_TEMP 'generated-brief.pdf'
+          [IO.File]::WriteAllText($brief, "%PDF-1.4`ngenerated for the dry run`n")
+          foreach ($environment in 'claude', 'codex') {
+            pwsh -NoProfile -File scripts/live-entry.ps1 -Environment $environment -Suite hard -Case family-connect -Brief $brief -DryRun -Work (Join-Path $work "family-connect-$environment")
+            if ($LASTEXITCODE -ne 0) { throw "Dry run failed: family-connect in $environment" }
           }
       - name: Test repository checks and push guard
         run: pwsh -NoProfile -File scripts/test-checks.ps1
