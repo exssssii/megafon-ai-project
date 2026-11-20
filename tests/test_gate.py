@@ -1280,6 +1280,18 @@ class Deliverable(Base):
         self.replace("outputs/deliverable.md", "120 в месяц", "130 в месяц")
         self.assertEqual(self.codes(), {"NUMBER_MISMATCH"})
 
+    def test_false_precision_is_caught(self):
+        self.replace("outputs/deliverable.md", "120 в месяц", "120,0000 в месяц")
+        self.assertEqual(self.codes(), {"NUMBER_PRECISION"})
+
+    def test_false_precision_of_an_assumption_is_caught(self):
+        self.write("outputs/deliverable.md", DELIVERABLE_MD + "\nДоля отклика 12,3456 % (допущение).\n")
+        self.assertEqual(self.codes(), {"NUMBER_PRECISION"})
+
+    def test_three_digits_after_the_comma_pass(self):
+        self.write("outputs/deliverable.md", DELIVERABLE_MD + "\nДоля отклика 12,35 % (допущение), сумма 0,648 млн руб. (допущение).\n")
+        self.assertEqual(self.codes(), set())
+
     def test_number_needs_a_link(self):
         self.replace("outputs/deliverable.md", "120 в месяц [CALC-0001]", "120 в месяц")
         self.assertEqual(self.codes(), {"NUMBER_UNLINKED"})

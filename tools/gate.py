@@ -293,6 +293,29 @@ def check_numbers(result, file, lines, index, record_id=None, shared_refs=(), us
                                f"{quantity['value']} is not in {', '.join(dict.fromkeys(linked)) or 'the brief'}", number)
 
 
+MAX_SHOWN_DIGITS = 3
+
+
+def check_precision(result, file, lines):
+    """A document for a reader shows at most three digits after the comma (a sum in millions to the thousand): more is false precision.
+
+    Assumptions count too: «555,5556 руб. (допущение)» is as false as a computed one.
+    """
+    for number, line in lines:
+        if HEADING_RE.match(line) or is_status_line(line):
+            continue
+        try:
+            matches = number_matches(strip_non_numbers(line))
+        except CalcError:
+            continue  # NUMBER_AMBIGUOUS is reported by check_numbers
+        for _, match in matches:
+            digits = re.search(r"[.,](\d+)$", match.group(2))
+            if digits and len(digits.group(1)) > MAX_SHOWN_DIGITS:
+                result.problem("NUMBER_PRECISION", file, None,
+                               f"{match.group(0).strip()} shows more than {MAX_SHOWN_DIGITS} digits after the comma",
+                               number)
+
+
 # --- form of the result ----------------------------------------------------
 
 def second_level_headings(lines: list[str]) -> list[tuple[int, str]]:
@@ -786,6 +809,7 @@ class Gate:
         lines = self.check_structure(DELIVERABLE, ())
         self.check_status(DELIVERABLE, lines)
         check_numbers(result, DELIVERABLE, list(enumerate(lines, 1)), self.index, user_said=self.user_said)
+        check_precision(result, DELIVERABLE, list(enumerate(lines, 1)))
         self.check_synthetic_marks(DELIVERABLE, lines)
         sections = split_sections(lines)
         for name in parts:
